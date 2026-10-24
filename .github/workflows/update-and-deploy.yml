@@ -12,7 +12,7 @@ permissions:
 
 concurrency:
   group: pages
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   update-and-deploy:
@@ -37,6 +37,7 @@ jobs:
 
       - name: Mettre à jour les données
         id: update
+        timeout-minutes: 10
         continue-on-error: true   # en cas d'échec, on publie les dernières données commitées
         run: python -W ignore update_data.py
 
