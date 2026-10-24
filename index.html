@@ -1,0 +1,115 @@
+<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tableau de bord – règles de Charles Gave</title><link rel="stylesheet" href="style.css">
+<script src="assets/plotly.min.js"></script><script src="assets/plotly-locale-fr.js"></script><script src="data/bundle.js"></script></head><body>
+<header><h1>Or · Obligations · Actions — les règles de Charles Gave</h1>
+<div class="sub">💡 Touche longue (mobile) ou survol (ordinateur) sur un graphique : une bulle affiche la date et les valeurs exactes.</div>
+<div class="sub">Règles décrites par Charles Gave (<i>Université de l'Épargne</i>), appliquées aux données actuelles. Mise à jour des données : <b id="upd">—</b></div>
+<nav class="sub"><a href="#synthese">Synthèse</a><a href="#g15">Or / obligations</a><a href="#g17">Actions / or</a><a href="#g23">Dividendes / or</a><a href="#profits">Profits / emploi</a><a href="#cac">CAC / S&amp;P</a><a href="#dette">Dette France</a><a href="#depenses">Dépenses / PIB</a><a href="#change">DM / euro</a><a href="#rente">Rente / profits</a><a href="#export">Exportations</a><a href="#methodo">Méthodologie &amp; limites</a></nav></header>
+<main>
+<section class="card disc"><b>Information, pas un conseil en investissement.</b> Cette page applique mécaniquement des règles publiées par Charles Gave à des données publiques gratuites. Elle ne tient pas compte de ta situation, de ta fiscalité ni de ton horizon. Ces règles se sont trompées plusieurs fois par le passé (voir chaque graphique) et rien ne garantit qu'elles fonctionneront à l'avenir. Les données reconstruites diffèrent de celles du livre.</section>
+
+<section id="synthese" class="card"><h2>Synthèse des signaux</h2><div class="grid" id="synth"></div><p id="synthtxt"></p></section>
+
+<section id="g15" class="card"><h2>Graphique 15 — Règle de décision : or ou marché obligataire</h2>
+<div class="sub">Ratio prix de l'once d'or (USD) / indice « rendement total » des emprunts d'État US, base 100 au 1/1/1972, et sa moyenne mobile 7 ans. Échelle logarithmique.</div>
+<div class="grid" id="cur15" style="margin-top:10px"></div><div id="c15" class="chart"></div>
+<h3>Ce que dit la règle</h3>
+<p>Ligne rouge (ratio) <b>au-dessus</b> de la ligne bleue (moyenne 7 ans) : on reste en <span class="or">or</span>. Elle passe <b>en dessous</b> : on vend l'or et on passe en <span class="obligations">obligations</span>. L'idée : quand l'or bat les obligations sur la durée, on est dans un régime d'<b>inflation</b> (les obligations perdent en valeur réelle) ; quand les obligations battent l'or, on est en <b>désinflation</b>.</p>
+<h3>Quand ça a marché, quand ça n'a pas marché</h3>
+<ul><li><b>A marché</b> : or de 1972 à 1983 (inflation des années 1970), obligations de 1983 à 2003 (grande désinflation, l'or perd plus de 80 % face aux obligations), or de 2003 à 2013, obligations 2013–2019, or depuis 2019. Ces grandes phases correspondent à celles du livre.</li>
+<li><b>Retard</b> : la moyenne de 7 ans réagit lentement. Le ratio a culminé en janvier 1980 mais la règle n'est sortie de l'or qu'en 1982–1983, après une chute de plus de moitié du ratio. Même chose à l'entrée en 2003, deux ans après le point bas.</li>
+<li><b>Faux signaux</b> : autour de chaque bascule, le ratio croise plusieurs fois la moyenne en quelques mois (1976–77, 1982–83, 2013). Appliquée mot pour mot, la règle aurait fait des allers-retours coûteux. Gave ne les fait pas apparaître sur son graphique.</li>
+<li><b>Aujourd'hui</b> : l'écart avec la moyenne est très grand. Si la tendance se retourne, la règle ne le signalera qu'après une baisse importante du ratio.</li></ul>
+<div id="bt15"></div></section>
+
+<section id="g17" class="card"><h2>Graphique 17 — Ratio S&amp;P 500 dividendes réinvestis / once d'or</h2>
+<div class="sub">S&amp;P 500 « rendement total » / prix de l'once d'or en dollars, base 100 au 1/1/2000, et moyenne mobile 7 ans. Échelle logarithmique.</div>
+<div class="grid" id="cur17" style="margin-top:10px"></div><div id="c17" class="chart"></div>
+<h3>Ce que dit la règle</h3>
+<p>C'est le duel entre la <b>valeur d'efficacité</b> (les entreprises, qui produisent et versent des dividendes) et la <b>valeur de rareté</b> (l'or). En divisant l'un par l'autre, la monnaie disparaît du calcul. Sur longue période, le ratio doit monter. Tant qu'il est <b>au-dessus</b> de sa moyenne 7 ans, Gave garde au moins ~33 % d'<span class="actions">actions</span>. S'il passe <b>en dessous</b>, « il y a un loup » : il vend les actions et achète de l'<span class="or">or</span>. « La limite de ma patience est de sept ans. »</p>
+<h3>Quand ça a marché, quand ça n'a pas marché</h3>
+<ul><li><b>Les exceptions selon Gave lui-même</b> : les années 1930, les années 1970 et 2000–2012. Pendant ces périodes, l'or a fait mieux que les actions malgré les dividendes.</li>
+<li><b>Ce que la règle aurait fait</b> : sortie des actions en 1931, retour en 1942, sortie en 1972, retour en 1983, sortie en 2002, retour en 2013. Les dates sont proches de celles du livre (5/1931, 4/1972, 10/2002).</li>
+<li><b>Limites</b> : le signal arrive tard. En 2002, le S&amp;P avait déjà perdu près de 30 % (dividendes compris) depuis son sommet de 2000, et la règle n'est revenue aux actions qu'en 2013, après une bonne partie de la hausse. On compte aussi de nombreux allers-retours (1936–1942, 1970–1972, 2020) quand le ratio colle à sa moyenne.</li>
+<li>Avant 1971, l'or avait un prix fixe (20,67 $ puis 35 $) : le ratio ne mesure alors quasiment que la Bourse.</li></ul>
+<div id="bt17"></div></section>
+
+
+<section id="g23" class="card"><h2>Graphique 23 — Les dividendes du S&amp;P 500 convergent vers un gramme d'or</h2>
+<div class="sub">Dividendes versés sur 12 mois par le S&amp;P 500, en dollars (échelle de droite) et en grammes d'or (échelle de gauche). Échelles logarithmiques. Les traits horizontaux reprennent les niveaux du livre : 1,465 g, 1 g, 0,66 g et 0,459 g.</div>
+<div class="grid" id="cur23" style="margin-top:10px"></div><div id="c23" class="chart"></div>
+<h3>Ce que ça montre</h3><p>Combien de grammes d'or on achète avec les dividendes d'une « part » du S&amp;P 500. En dollars, les dividendes montent presque sans arrêt, parce que le dollar perd de sa valeur. En or, ils oscillent depuis un siècle autour d'environ <b>1 gramme</b>.</p>
+<h3>Ce qu'en dit Gave</h3><p>Pour Gave, mesurer en or enlève l'effet de la monnaie. Quand les dividendes achètent beaucoup d'or (vers 1,465 g et au-delà), les actions sont chères par rapport à l'or : son graphique indique « vendre les actions et acheter de l'or » (fin des années 1990). Quand ils en achètent peu (vers 0,459 g et en dessous), c'est l'inverse : « vendre l'or et acheter des actions » (1980). Ailleurs dans le même chapitre : « si l'or sort d'un pays, vous n'achetez plus ni sa monnaie ni son marché obligataire ».</p>
+<h3>Quand ça a marché, quand ça n'a pas marché</h3><ul>
+<li><b>Au-dessus de 1,465 g</b> : 1930–1931, 1956–1973 et 1997–2005. La sortie de 1997–2000 aurait été bien placée, avant le krach de 2000–2002 et la hausse de l'or. En revanche, la période 1956–1973 est un artefact : l'or avait alors un prix fixé par l'État (35 $), et le ratio n'avait rien d'un signal de marché.</li>
+<li><b>Sous 0,459 g</b> : 1934–1936 (dévaluation du dollar contre l'or), 1979–1983 et août–octobre 2011. Chaque fois, c'était un bon moment pour repasser de l'or aux actions.</li>
+<li><b>Limites</b> : ces seuils sont lus sur le graphique du livre, et le texte des pages fournies ne donne pas la règle exacte. Ils ont été choisis en voyant tout l'historique, avec très peu d'épisodes (3 ou 4 par seuil en un siècle). Le ratio peut rester longtemps loin de 1 g : par exemple sous 0,66 g de 2008 à 2014.</li></ul></section>
+
+<section id="profits" class="card"><h2>Bonus — Profits des entreprises US et emploi (glissement annuel)</h2>
+<div class="sub">Profits après impôts (FRED CP, trimestriel) en variation sur 1 an, décalés de 9 mois vers la droite, et emplois salariés non agricoles (FRED PAYEMS) en variation sur 1 an.</div>
+<div class="grid" id="curp" style="margin-top:10px"></div><div id="cp" class="chart"></div>
+<p>L'idée reprise de Gave : les entreprises embauchent quand leurs profits montent et licencient quand ils baissent, avec environ 9 mois de retard. Une forte baisse des profits annonce donc souvent un ralentissement de l'emploi. <b>Ce n'est pas une règle d'achat ou de vente</b>, c'est un indicateur de contexte. La relation est très bruitée : les chocs comme 2020 ou les effets fiscaux faussent les profits, et le décalage de 9 mois varie beaucoup d'un cycle à l'autre.</p></section>
+
+<section id="cac" class="card"><h2>Bonus — CAC 40 en dollars / S&amp;P 500</h2>
+<div class="sub">Indices de prix (hors dividendes), CAC 40 converti en USD, base 100 en janvier 1999, et moyenne mobile 7 ans.</div>
+<div class="grid" id="curc" style="margin-top:10px"></div><div id="cc" class="chart"></div>
+<p>Quand la courbe monte, la Bourse de Paris (en dollars) fait mieux que Wall Street. Dans ses livres, Gave s'en sert pour montrer la sous-performance française. <b>Les pages fournies ne donnent pas de règle de décision pour ce graphique</b> : la moyenne 7 ans est affichée seulement à titre indicatif. Limite : sans les dividendes, le CAC est désavantagé d'environ 1 point par an, car ses dividendes sont plus élevés.</p></section>
+
+
+<section id="dette" class="card"><h2>Dette publique de la France (% du PIB)</h2>
+<div class="sub">Dette brute consolidée des administrations publiques (définition de Maastricht), en % du PIB. Série annuelle AMECO (Commission européenne) depuis 1977, plus les derniers points trimestriels d'Eurostat. Royaume-Uni, Pays-Bas et Allemagne en comparaison. Les pointillés sont des prévisions de la Commission.</div>
+<div class="grid" id="curd" style="margin-top:10px"></div><div id="cd" class="chart"></div>
+<h3>Ce que ça montre</h3><p>La part de la dette publique dans la richesse produite chaque année. Elle monte quand l'État emprunte plus vite que l'économie ne croît. Le trait à 60 % correspond au plafond du traité de Maastricht.</p>
+<h3>Ce qu'en dit Gave</h3><p>Dans le livre, Gave oppose la France au Royaume-Uni. Pendant la période de croissance mondiale 1994–2001, la dette britannique est restée stable en montant, donc elle a baissé par rapport au PIB, alors que la dette française « a doublé et est passée de 45 % à 60 % du PNB ». Pour lui, la France « dépense allègrement pendant les vaches grasses et emprunte tout aussi allègrement pendant les vaches maigres ». Il ajoute qu'une dette qui finance de la consommation plutôt que de l'investissement sera payée par les générations suivantes.</p>
+<h3>Limites</h3><ul><li>AMECO ne commence qu'en 1977 pour la France. Les séries plus longues (FMI, depuis 1880) n'étaient pas téléchargeables d'ici : le site du FMI a bloqué l'accès.</li>
+<li>D'après AMECO (données révisées), la dette française est passée de 51 % à 59 % du PIB entre 1994 et 2001, et non de 45 % à 60 %. Sur la même période, celle du Royaume-Uni est passée de 41 % à 35 %. Le constat du livre tient, avec des chiffres un peu différents. Depuis, la dette britannique a elle aussi fortement augmenté (~102 % en 2025).</li>
+<li>Un ratio dette/PIB élevé ne dit rien à lui seul sur le risque de crise. Le Japon dépasse 200 % sans crise, alors que d'autres pays ont fait défaut à 60 %. Le coût de la dette (taux d'intérêt comparé à la croissance) et la personne qui la détient comptent autant.</li>
+<li>Ce graphique ne donne pas de signal d'achat ou de vente : c'est un indicateur de contexte.</li></ul></section>
+
+<section id="depenses" class="card"><h2>Dépenses de l'État et PIB en volume — France, Royaume-Uni, Pays-Bas</h2>
+<div class="sub">Base 100 l'année choisie. PIB en volume (pointillés) contre dépenses publiques « en volume », c'est-à-dire divisées par le prix du PIB. Données annuelles AMECO, sans les prévisions.</div>
+<div style="margin:10px 0" id="baseSel" class="sub">Année de base : </div>
+<div class="grid" id="cs"></div>
+<h3>Ce que ça montre</h3><p>Si la courbe des dépenses passe au-dessus de celle du PIB, l'État grossit plus vite que l'économie : sa part dans la richesse produite augmente. Si elle passe en dessous, sa part diminue.</p>
+<h3>Ce qu'en dit Gave</h3><ul><li><b>France</b> (base 1978 dans le livre) : « les dépenses de l'État français croissent plus vite que le PNB ».</li>
+<li><b>Royaume-Uni</b> : de 1960 à 1976, les dépenses augmentent plus vite que le PIB, jusqu'à l'appel au FMI en 1976–77 (« faillite anglaise »). À partir de 1982, c'est l'inverse : la croissance du PIB dépasse celle de l'État.</li>
+<li><b>Pays-Bas</b> : ils « réussissent également à contrôler la croissance des dépenses de l'État ». Son argument : un État qui prélève moins laisse plus de ressources au secteur privé, qui fait la croissance.</li></ul>
+<h3>Limites</h3><ul><li><b>Approximation</b> : « dépenses en volume » veut dire dépenses en euros ou en livres divisées par le prix du PIB. Le rapport dépenses/PIB obtenu est donc exactement la part des dépenses dans le PIB, avec une base 100.</li>
+<li><b>Deux mesures</b> : la <i>consommation publique</i> (salaires des fonctionnaires, achats courants), disponible depuis 1960 pour les trois pays, et la <i>dépense publique totale</i> (qui ajoute prestations sociales, intérêts et investissement), disponible seulement depuis 1978 pour la France et 1995 pour les Pays-Bas. AMECO ne la publie pas pour le Royaume-Uni. Le livre ne précise pas laquelle il utilise.</li>
+<li><b>Ce que donnent les données AMECO actuelles</b> : France 1978–2002, PIB 173 contre dépense totale 204 et consommation publique 189 (conforme au livre). Royaume-Uni 1960–1976, PIB 154 contre consommation 194 (conforme). Royaume-Uni et Pays-Bas 1982–2002, le PIB croît un peu plus vite que la consommation publique (conforme). <b>En revanche, de 2002 à 2025, la consommation publique a crû plus vite que le PIB dans les trois pays</b>, y compris chez les « bons élèves » du livre : Royaume-Uni 164 contre 140, Pays-Bas 166 contre 141.</li>
+<li>Pendant les récessions (2009, 2020), le PIB chute et la part des dépenses grimpe mécaniquement : ce n'est pas forcément un choix politique. Ce graphique ne prouve pas, à lui seul, que la dépense publique freine la croissance. Le lien de cause à effet fait débat chez les économistes.</li></ul></section>
+
+<section id="change" class="card"><h2>Taux de change effectif du deutschemark, puis de l'euro</h2>
+<div class="sub">Indices de la BRI (Banque des règlements internationaux), panier « étroit » de 27 pays, mensuels. Allemagne jusqu'en décembre 1998, puis zone euro raccordée en janvier 1999. Base 100 en octobre 1990 (réunification). Le taux nominal suit les monnaies seules ; le taux réel tient aussi compte des écarts d'inflation.</div>
+<div class="grid" id="curx" style="margin-top:10px"></div><div id="cx" class="chart"></div>
+<h3>Ce que ça montre</h3><p>La valeur de la monnaie face à un panier des monnaies des principaux partenaires commerciaux, pondérées par le commerce. Quand la courbe monte, la monnaie s'apprécie et les exportations deviennent plus chères.</p>
+<h3>Ce qu'en dit Gave</h3><p>Après la réunification, le DM s'est apprécié d'environ 30 % (jusque vers 130 dans son graphique, en 1995). Pour lui, ce n'est pas une erreur du marché mais une <b>erreur de politique</b> de la Bundesbank, qui a maintenu des taux trop élevés. Un patron allemand ne pouvait plus justifier des salaires est-allemands « à peine rentables avec un DM à 100 » quand le DM valait 130 : « il faut donc les virer, ou faire faillite ». Le marché « aurait pu voir sa valeur monter pendant un, voire deux ans… Deux ans, mais pas cinq. » Pour maintenir la parité franc/DM, la France a dû payer des taux plus élevés encore, au détriment des entrepreneurs et des chômeurs.</p>
+<h3>Limites</h3><ul><li><b>Écart avec le livre</b> : avec l'indice nominal « étroit » de la BRI, la hausse jusqu'au pic de 1995 n'est que d'environ 13 %, contre ~30 % dans le graphique de Gave. Son panier de « concurrents » est différent et n'est pas précisé : la forme est la même, mais l'ampleur ne l'est pas.</li>
+<li>Le raccord de 1999 assemble deux mesures différentes. Le DM se mesurait contre tous les partenaires, y compris le franc ou la lire. L'euro se mesure contre les monnaies hors zone euro.</li>
+<li>Ce graphique ne donne pas de signal d'investissement.</li></ul></section>
+
+<section id="rente" class="card"><h2>Rente et profits en France (base 100 en 1981)</h2>
+<div class="sub">Placement monétaire capitalisé (taux à 3 mois français, puis Euribor) pour le « rentier français ». Même calcul avec le taux à 3 mois allemand pour le « rentier allemand ». Profits : excédent brut d'exploitation des sociétés françaises. Tout est en valeur nominale, base 100 en 1981.</div>
+<div class="grid" id="curr" style="margin-top:10px"></div><div id="cr" class="chart"></div>
+<div class="sub" style="margin-top:8px">Variation annuelle du ratio rente/profits (barres, échelle de gauche) et variation annuelle du taux de chômage en France (ligne, en points, échelle de droite)</div>
+<div id="cr2" class="chart" style="height:320px"></div>
+<h3>Ce que ça montre</h3><p>Ce qu'est devenu 100 placé en 1981 sans risque, au taux du marché monétaire, comparé à la croissance des profits des entreprises. Si la rente croît plus vite que les profits, le capital rapporte plus en dormant qu'en travaillant dans l'entreprise.</p>
+<h3>Ce qu'en dit Gave</h3><p>Pour maintenir la parité franc/DM, la Banque de France a dû payer des taux plus élevés que ceux du DM. Selon lui, le rentier français qui avait 100 en 1981 avait 450 en 2002, contre 300 pour son homologue allemand. « Qui a souffert de ces taux ? Les entrepreneurs et les chômeurs. » Sa méthode : diviser la rente par le profit, puis regarder la variation sur 12 mois de ce ratio. Quand la rente progresse plus vite que les profits, le chômage monte.</p>
+<h3>Limites et approximations</h3><ul>
+<li><b>Rente</b> : taux interbancaires à 3 mois de l'OCDE (via FRED), capitalisés chaque mois, avant impôts. Gave utilise des « bons du Trésor capitalisés », et ses niveaux exacts ne sont pas reproductibles. On obtient ~550 pour la France et ~346 pour l'Allemagne en janvier 2002, contre ~450 et ~300 dans le livre. Le sens et l'écart entre les deux pays sont les mêmes. Depuis 1999, les deux taux sont identiques (Euribor) : les deux courbes progressent donc au même rythme.</li>
+<li><b>Profits</b> : excédent brut d'exploitation de <i>toutes</i> les sociétés, y compris financières (AMECO). Les données sont annuelles et non mensuelles : on calcule donc une variation sur un an. Ce n'est pas exactement la série du livre.</li>
+<li><b>Lien avec le chômage</b> : <span id="corr">—</span>. C'est un lien réel mais modéré, et une corrélation ne prouve pas une causalité : les taux, les profits et le chômage dépendent tous du cycle économique.</li></ul></section>
+
+<section id="export" class="card"><h2>Exportations françaises et américaines en % des exportations de l'OCDE (base 100 en 1982)</h2>
+<div class="sub">Exportations de marchandises en dollars courants (Banque mondiale, d'après l'OMC). Part de la France et des États-Unis dans le total des pays de l'OCDE. Annuel.</div>
+<div class="grid" id="cure" style="margin-top:10px"></div><div id="ce" class="chart"></div>
+<h3>Ce que ça montre</h3><p>Le poids d'un pays dans le commerce des pays riches. Une courbe qui baisse signifie que le pays exporte moins vite que ses concurrents de l'OCDE.</p>
+<h3>Ce qu'en dit Gave</h3><p>« Nos parts de marché sont passées de 100 en 1982 à 75 aujourd'hui » (vers 2002), tandis que « les États-Unis maintiennent leur position, malgré la hausse vertigineuse du dollar ». Pour lui, ce déclin vient des frais fixes « exorbitants » de l'État français, qui pèsent sur la compétitivité.</p>
+<h3>Limites</h3><ul>
+<li><b>Écart avec le livre en 2002</b> : on obtient ~94 pour la France et ~88 pour les États-Unis, contre ~75 et ~90 dans le livre. Le groupe « OCDE » de la Banque mondiale regroupe les 38 membres <i>actuels</i> (Mexique, Corée, Pologne…) sur tout l'historique, alors que le livre utilisait l'OCDE de l'époque. Gave utilisait peut-être aussi des données mensuelles.</li>
+<li>Les parts sont calculées en dollars : quand le dollar baisse, la part des pays hors zone dollar monte mécaniquement, et inversement.</li>
+<li>Seules les marchandises sont comptées. Les services, où la France est plus forte (tourisme, services), sont exclus.</li></ul></section>
+
+<section id="methodo" class="card"><h2>Méthodologie &amp; limites</h2><div id="methodo-body"></div></section>
+<p class="sub">Données : Shiller (Yale), FRED (Fed de Saint-Louis), Yahoo Finance, datasets/gold-prices (GitHub), AMECO (Commission européenne), Eurostat, BRI, Banque mondiale. Projet personnel, sans lien avec Charles Gave ni l'Institut des Libertés.</p>
+</main><script src="app.js"></script></body></html>

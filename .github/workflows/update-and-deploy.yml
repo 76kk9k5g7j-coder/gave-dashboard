@@ -1,0 +1,68 @@
+name: Mise à jour hebdomadaire et publication
+
+on:
+  schedule:
+    - cron: "0 8 * * 6"   # samedi 08:00 UTC (10:00 heure de Paris en été, 09:00 en hiver)
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  update-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Cache des téléchargements bruts (secours si une source est indisponible)
+        uses: actions/cache@v4
+        with:
+          path: cache
+          key: raw-${{ github.run_id }}
+          restore-keys: raw-
+
+      - name: Installer les dépendances
+        run: pip install -r requirements.txt
+
+      - name: Mettre à jour les données
+        id: update
+        continue-on-error: true   # en cas d'échec, on publie les dernières données commitées
+        run: python -W ignore update_data.py
+
+      - name: Commiter les données si elles ont changé
+        if: steps.update.outcome == 'success'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/
+          if git diff --cached --quiet; then
+            echo "Pas de changement de données."
+          else
+            git commit -m "Données mises à jour le $(date -u +%Y-%m-%d)"
+            git push
+          fi
+
+      - name: Préparer le site
+        run: |
+          mkdir -p _site
+          cp -r index.html app.js style.css assets data _site/
+          touch _site/.nojekyll
+
+      - name: Publier sur la branche gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./_site
+          publish_branch: gh-pages
+          force_orphan: true
