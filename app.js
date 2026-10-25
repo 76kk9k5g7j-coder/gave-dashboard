@@ -1,7 +1,7 @@
 (async function(){
 let D = window.GAVE_DATA;
 if(!D){ // repli : lecture des JSON via un serveur
-  D = {}; for (const k of ['meta','g15','g17','profits','cac','sources']) { try{ D[k]=await (await fetch('data/'+k+'.json')).json(); }catch(e){} }
+  D = {}; for (const k of ['meta','g15','g17','g23','profits','cac','dette','depenses','change','rente','export','quadrants','wicksell','frbonds','surachat','sources']) { try{ D[k]=await (await fetch('data/'+k+'.json')).json(); }catch(e){} }
   D.last_updated = D.meta && D.meta.last_updated;
 }
 const MOIS=['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
@@ -15,9 +15,17 @@ const dark = {paper_bgcolor:'#161b22',plot_bgcolor:'#0d1117',font:{color:'#e6edf
   legend:{orientation:'h',y:-0.15},xaxis:{gridcolor:'#21262d'},yaxis:{gridcolor:'#21262d',type:'log'},hovermode:'x unified'};
 const cfg = {responsive:true,displaylogo:false,modeBarButtonsToRemove:['lasso2d','select2d']};
 const toDate = p => p.length===7? p+'-01' : p;
-// ---------- Bulles d'information (survol souris / appui sur mobile)
+// ---------- Bulles d'information (survol souris / appui sur mobile) + périodes, zoom, déplacement, plein écran
 const TOUCH = (window.matchMedia && matchMedia('(pointer: coarse)').matches) || ('ontouchstart' in window);
+const YR = 365.25*864e5;
+const toY = x => { if(typeof x==='number') return x; let s=String(x); if(s.length===7) s+='-01';
+  s = s.length===10 ? s+'T00:00:00Z' : s.replace(' ','T')+'Z'; return Date.parse(s)/YR+1970; };
+const fromY = (v,isDate) => isDate ? new Date((v-1970)*YR).toISOString().replace('T',' ').slice(0,19) : v;
+const PERIODS = [['1 mois',1/12],['3 mois',0.25],['6 mois',0.5],['1 an',1],['5 ans',5],['10 ans',10],['20 ans',20],['30 ans',30]];
+const MINPTS = 6; // un bouton de période n'est affiché que si la fenêtre contient au moins 6 points
+const yAxes = gd => Object.keys(gd._fullLayout).filter(k=>/^yaxis\d*$/.test(k));
 function plot(id, traces, layout, _cfg, opt={}){
+  layout = JSON.parse(JSON.stringify(layout)); // copie : Plotly modifie les axes en place et `dark` est partagé entre graphiques
   const xf = opt.xfmt===undefined ? '%B %Y' : opt.xfmt;
   traces.forEach(t=>{
     if(!t.hovertemplate && t.hoverinfo!=='skip'){ const u=t.u!==undefined?t.u:(opt.unit||''), f=t.f||opt.yfmt||',.2f';
@@ -27,25 +35,135 @@ function plot(id, traces, layout, _cfg, opt={}){
   const L = {...layout, hovermode: opt.hovermode||'x unified', dragmode: TOUCH?false:'zoom', hoverdistance: 60, spikedistance: -1,
     hoverlabel:{bgcolor:'#0d1117',bordercolor:'#8b949e',font:{color:'#e6edf3',size:13},namelength:-1},
     xaxis:{...(dark.xaxis||{}), ...(layout.xaxis||{}), ...(xf?{hoverformat:xf}:{}), showspikes:true, spikemode:'across', spikethickness:1, spikecolor:'#8b949e', spikedash:'dot'}};
-  const C = {responsive:true, displaylogo:false, locale:'fr', scrollZoom:false, displayModeBar: !TOUCH,
-    modeBarButtonsToRemove:['lasso2d','select2d']};
-  return Plotly.newPlot(id, traces, L, C).then(gd=>{ if(TOUCH) addTouchHover(gd); return gd; });
+  // molette désactivée par défaut (elle capturerait le défilement de la page) ; activée en plein écran sur ordinateur
+  const C = {responsive:true, displaylogo:false, locale:'fr', scrollZoom:false, displayModeBar: !TOUCH, doubleClick:'reset',
+    modeBarButtonsToRemove:['lasso2d','select2d','autoScale2d','zoomIn2d','zoomOut2d']};
+  const el = document.getElementById(id), wrap = ensureWrap(el);
+  return Plotly.newPlot(el, traces, L, C).then(gd=>{
+    gd._gvC = C; initView(gd, wrap);
+    if(TOUCH && !gd._touchHooked){ gd._touchHooked=true; addTouchHover(gd); }
+    return gd; });
 }
+// Barre d'outils au-dessus de chaque graphique
+function ensureWrap(el){
+  if(el.parentNode.classList.contains('cwrap')) return el.parentNode;
+  const w=document.createElement('div'); w.className='cwrap'; el.parentNode.insertBefore(w, el);
+  const bar=document.createElement('div'); bar.className='ctools';
+  bar.innerHTML=`<div class="per" role="group" aria-label="Période"></div><div class="act">
+   <button type="button" data-a="in" title="Zoomer" aria-label="Zoomer">＋</button><button type="button" data-a="out" title="Dézoomer" aria-label="Dézoomer">－</button>
+   <button type="button" data-a="pan" aria-pressed="false" title="Glisser pour déplacer la période">✋ Déplacer</button>
+   <button type="button" data-a="reset" title="Revenir à la vue complète">⟲ Réinitialiser</button>
+   <button type="button" data-a="fs" class="fsb" title="Plein écran">⛶ Plein écran</button></div>`;
+  w.append(bar, el);
+  bar.addEventListener('click', ev=>{ const b=ev.target.closest('button'); if(!b) return; const gd=el; if(!gd._gv) return;
+    if(b.dataset.p!==undefined) applyPeriod(gd, b.dataset.p==='all'?'all':+b.dataset.p);
+    else ({in:()=>zoomBy(gd,0.5), out:()=>zoomBy(gd,2), pan:()=>setPan(gd,!gd._gv.pan), reset:()=>applyPeriod(gd,'all'), fs:()=>toggleFS(w,gd)})[b.dataset.a]();
+  });
+  return w;
+}
+function initView(gd, wrap){
+  const tx = gd.data.map(t=>Array.isArray(t.x)? t.x.map(toY) : null);
+  let xmin=Infinity,xmax=-Infinity,dense=null;
+  tx.forEach(a=>{ if(!a||!a.length) return; for(const v of a){ if(v<xmin) xmin=v; if(v>xmax) xmax=v; } if(!dense||a.length>dense.length) dense=a; });
+  const sp = dense? dense.slice(1).map((v,i)=>v-dense[i]).sort((a,b)=>a-b) : [1];
+  const step = sp.length? sp[sp.length>>1] : 1, fine = step < 0.12;  // fine = mensuel ou plus fin
+  const orig={}; yAxes(gd).forEach(k=>{ const r=gd.layout[k]&&gd.layout[k].range; orig[k]= r? r.slice() : null; });
+  const prev = gd._gv || {};
+  gd._gv = {tx, xmin, xmax, step, isDate: gd._fullLayout.xaxis.type==='date', orig, pan:false, busy:false, period:'all', wrap};
+  // périodes proposées : mensuel → jusqu'à 20 ans ; annuel → 10, 20, 30 ans. On masque celles qui donneraient < 6 points
+  // ou qui couvrent déjà tout l'historique.
+  const cand = fine ? PERIODS.filter(p=>p[1]<=20) : PERIODS.filter(p=>p[1]>=10);
+  const avail = cand.filter(([_,p])=> p < (xmax-xmin)*0.95 && dense && dense.filter(v=>v>=xmax-p-1e-6).length>=MINPTS);
+  gd._gv.periods = avail.map(p=>p[1]);
+  wrap.querySelector('.per').innerHTML = avail.map(([l,p])=>`<button type="button" data-p="${p}">${l}</button>`).join('') + `<button type="button" data-p="all">Tout</button>`;
+  gd.on('plotly_relayout', ev=>onRelayout(gd, ev));
+  if(prev.pan) setPan(gd, true);
+  if(prev.period && prev.period!=='all' && gd._gv.periods.includes(prev.period)) applyPeriod(gd, prev.period); else markPeriod(gd,'all');
+}
+function markPeriod(gd, p){ gd._gv.period=p; gd._gv.wrap.querySelectorAll('.per button').forEach(b=>b.classList.toggle('on', p!==null && String(b.dataset.p)===String(p))); }
+function fitY(gd, x0, x1){
+  const by={}, out={};
+  gd.data.forEach((t,i)=>{ const a=gd._gv.tx[i]; if(!a||!t.y||t.visible===false||t.visible==='legendonly') return;
+    const ax = t.yaxis||'y', s = by[ax]||(by[ax]={lo:Infinity,hi:-Infinity,bar:false}); if(t.type==='bar') s.bar=true;
+    const log = (gd._fullLayout[ax==='y'?'yaxis':'yaxis'+ax.slice(1)]||{}).type==='log';
+    for(let k=0;k<a.length;k++){ if(a[k]<x0||a[k]>x1) continue; let y=t.y[k]; if(y==null||!isFinite(y)) continue; y=+y;
+      if(log){ if(y<=0) continue; y=Math.log10(y); } if(y<s.lo) s.lo=y; if(y>s.hi) s.hi=y; }
+    if(s.bar && !log){ s.lo=Math.min(s.lo,0); s.hi=Math.max(s.hi,0); } });
+  for(const [ax,s] of Object.entries(by)){ if(!isFinite(s.lo)) continue; const k = ax==='y'?'yaxis':'yaxis'+ax.slice(1);
+    const pad = (s.hi-s.lo)*0.07 || Math.max(Math.abs(s.hi)*0.05, 0.05); out[k+'.range']=[s.lo-pad, s.hi+pad]; }
+  return out;
+}
+function relay(gd, upd){ const st=gd._gv; st.busy=true; return Plotly.relayout(gd, upd).catch(()=>{}).finally(()=>{ st.busy=false; }); }
+function setRange(gd, x0, x1){ const st=gd._gv;
+  return relay(gd, {'xaxis.range':[fromY(x0,st.isDate), fromY(x1,st.isDate)], ...fitY(gd, x0, x1)}); }
+function applyPeriod(gd, p){ const st=gd._gv;
+  if(p==='all'){ const upd={'xaxis.autorange':true}; for(const [k,r] of Object.entries(st.orig)) upd[k+(r?'.range':'.autorange')] = r? r.slice() : true;
+    markPeriod(gd,'all'); return relay(gd, upd); }
+  markPeriod(gd,p); return setRange(gd, st.xmax-p-st.step*0.5, st.xmax+st.step*0.5);
+}
+function curX(gd){ const r=gd._fullLayout.xaxis.range; return [toY(r[0]), toY(r[1])]; }
+function zoomBy(gd, f){ const st=gd._gv, [a,b]=curX(gd), full=(st.xmax-st.xmin)+st.step;
+  let h=Math.max((b-a)/2*f, st.step*3), c=(a+b)/2; if(2*h>=full) return applyPeriod(gd,'all');
+  if(b>=st.xmax) c=st.xmax+st.step/2-h; // vue collée à la fin des données : on garde le dernier point visible
+  c=Math.min(Math.max(c, st.xmin-st.step/2+h), st.xmax+st.step/2-h); markPeriod(gd,null); return setRange(gd, c-h, c+h); }
+function setPan(gd, on){ const st=gd._gv; st.pan=on;
+  const upd={dragmode: on?'pan':(TOUCH?false:'zoom')}; yAxes(gd).forEach(k=>upd[k+'.fixedrange']=on);  // déplacement horizontal seulement, axe vertical recalé
+  st.wrap.classList.toggle('panning', on); const b=st.wrap.querySelector('[data-a="pan"]'); b.setAttribute('aria-pressed', on); b.classList.toggle('on', on);
+  return relay(gd, upd); }
+function onRelayout(gd, ev){ const st=gd._gv; if(!st||st.busy) return; const ks=Object.keys(ev);
+  if(ev['xaxis.autorange']){ markPeriod(gd,'all'); // double-clic Plotly : on restaure les échelles d'origine
+    const upd={}; for(const [k,r] of Object.entries(st.orig)) if(r) upd[k+'.range']=r.slice(); if(Object.keys(upd).length) relay(gd, upd); return; }
+  const xk = ks.some(k=>k.startsWith('xaxis.range')), yk = ks.some(k=>/^yaxis\d*\.range/.test(k));
+  if(xk){ markPeriod(gd,null); if(!yk){ const [a,b]=curX(gd); relay(gd, fitY(gd,a,b)); } }
+}
+// Plein écran : API Fullscreen si disponible, sinon calque CSS couvrant tout l'écran (iPhone)
+let FSW=null;
+function toggleFS(w, gd){ if(FSW) exitFS(); else enterFS(w, gd); }
+function enterFS(w, gd){ FSW=w; w.classList.add('fs'); document.body.classList.add('noscroll');
+  w.querySelector('.fsb').textContent='✕ Fermer'; w.querySelector('.fsb').title='Quitter le plein écran (Échap)';
+  const after=()=>{ try{ screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape').catch(()=>{}); }catch(e){} };
+  if(w.requestFullscreen && !w._noNative){ w.requestFullscreen({navigationUI:'hide'}).then(after).catch(()=>{}); }
+  else if(w.webkitRequestFullscreen){ try{ w.webkitRequestFullscreen(); }catch(e){} }
+  gd._legY = gd.layout.legend && gd.layout.legend.y; if(gd._legY!=null && gd._legY<0) relay(gd, {'legend.y': -0.06});
+  setWheel(gd, true); resizeSoon(gd);
+}
+function exitFS(){ const w=FSW; if(!w) return; FSW=null; const gd=w.querySelector('.js-plotly-plot');
+  w.classList.remove('fs'); document.body.classList.remove('noscroll');
+  w.querySelector('.fsb').textContent='⛶ Plein écran'; w.querySelector('.fsb').title='Plein écran';
+  try{ screen.orientation && screen.orientation.unlock && screen.orientation.unlock(); }catch(e){}
+  const fe=document.fullscreenElement||document.webkitFullscreenElement; if(fe){ (document.exitFullscreen||document.webkitExitFullscreen).call(document).catch?.(()=>{}); }
+  if(gd){ if(gd._legY!=null && gd._legY<0) relay(gd, {'legend.y': gd._legY}); setWheel(gd,false); resizeSoon(gd); }
+}
+function setWheel(gd, on){ if(TOUCH || !gd._gvC) return; const st=gd._gv, r=gd._fullLayout.xaxis.range.slice(), per=st.period, pan=st.pan;
+  gd._gvC = {...gd._gvC, scrollZoom:on};
+  Plotly.react(gd, gd.data, gd.layout, gd._gvC).then(()=>{ gd.on('plotly_relayout', ev=>onRelayout(gd, ev)); st.pan=pan; markPeriod(gd, per); });
+}
+function resizeSoon(gd){ requestAnimationFrame(()=>{ Plotly.Plots.resize(gd); setTimeout(()=>Plotly.Plots.resize(gd),250); }); }
+['fullscreenchange','webkitfullscreenchange'].forEach(e=>document.addEventListener(e, ()=>{
+  const fe=document.fullscreenElement||document.webkitFullscreenElement; if(!fe && FSW) exitFS(); else if(fe){ const gd=fe.querySelector('.js-plotly-plot'); gd&&resizeSoon(gd); } }));
+document.addEventListener('keydown', e=>{ if(e.key==='Escape' && FSW) exitFS(); });
+window.addEventListener('orientationchange', ()=>{ if(FSW){ const gd=FSW.querySelector('.js-plotly-plot'); gd&&setTimeout(()=>Plotly.Plots.resize(gd),300); } });
+
 // Sur écran tactile : un appui (ou un appui long en glissant le doigt) affiche la bulle au point touché.
+// En mode « Déplacer », le doigt fait glisser la période et la bulle est mise en pause. Double appui = vue complète.
 function addTouchHover(gd){
-  let last=null;
-  const show = ()=>{ if(!last) return; const d=gd._dragging; gd._dragging=false;
+  let last=null, t0=null, moved=false, lastTap=0, lastTapXY=null;
+  const show = ()=>{ if(!last || (gd._gv&&gd._gv.pan)) return; const d=gd._dragging; gd._dragging=false;
     try{ Plotly.Fx.hover(gd, last); } finally { gd._dragging=d; } };
   const pos = ev=>{
     const t = (ev.touches && ev.touches[0]) || (ev.changedTouches && ev.changedTouches[0]); if(!t) return null;
     const area = gd.querySelector('.nsewdrag'); if(!area) return null;
     const bb = area.getBoundingClientRect(), xpx=t.clientX-bb.left, ypx=t.clientY-bb.top;
-    return (xpx<0||xpx>bb.width||ypx<0||ypx>bb.height) ? null : {xpx, ypx};
+    return (xpx<0||xpx>bb.width||ypx<0||ypx>bb.height) ? null : {xpx, ypx, cx:t.clientX, cy:t.clientY};
   };
-  gd.addEventListener('touchstart', ev=>{ last=pos(ev); show(); }, {passive:true, capture:true});
-  gd.addEventListener('touchmove',  ev=>{ const p=pos(ev); if(p){ last=p; show(); } }, {passive:true, capture:true});
-  // après le relâchement, Plotly efface la bulle : on la réaffiche pour qu'elle reste lisible
-  gd.addEventListener('touchend', ()=>{ setTimeout(show, 60); }, {passive:true, capture:true});
+  gd.addEventListener('touchstart', ev=>{ last=pos(ev); t0=last; moved=false; if(ev.touches.length===1) show(); }, {passive:true, capture:true});
+  gd.addEventListener('touchmove',  ev=>{ const p=pos(ev); if(p){ if(t0 && Math.hypot(p.cx-t0.cx,p.cy-t0.cy)>12) moved=true; last=p; show(); } }, {passive:true, capture:true});
+  gd.addEventListener('touchend', ()=>{
+    const now=Date.now();
+    if(!moved && t0){ if(now-lastTap<320 && lastTapXY && Math.hypot(t0.cx-lastTapXY.cx,t0.cy-lastTapXY.cy)<40){ lastTap=0; Plotly.Fx.unhover(gd); applyPeriod(gd,'all'); return; }
+      lastTap=now; lastTapXY=t0; }
+    // après le relâchement, Plotly efface la bulle : on la réaffiche pour qu'elle reste lisible
+    setTimeout(show, 60); }, {passive:true, capture:true});
 }
 
 function recentFlips(ev, months=24){
@@ -101,11 +219,87 @@ document.getElementById('synth').innerHTML = [[g15,'Graphique 15 · Or vs obliga
  `<div class="sig"><div class="sub">${t}</div><div class="big ${g.current.signal}">${LBL[g.current.signal]}</div>
   <div>depuis ${fm(g.current.since)} · écart à la moyenne ${pct(g.current.gap_pct)}</div></div>`).join('') +
  (D.g23? `<div class="sig"><div class="sub">Graphique 23 · Dividendes S&amp;P en or</div><div class="big">${num(D.g23.current.ratio,2)} g</div><div>${D.g23.current.ratio<=D.g23.levels.bas?'zone basse (actions bon marché vs or)':D.g23.current.ratio>=D.g23.levels.haut?'zone haute (actions chères vs or)':'entre les seuils 0,459 g et 1,465 g'} · médiane ${num(D.g23.current.median,2)} g</div></div>`:'') +
+ (D.quadrants? `<div class="sig"><div class="sub">Quadrant (hypothèse MM 7 ans)</div><div class="big">${D.quadrants.current.label}</div><div>actifs permis : ${D.quadrants.current.allowed.join(' + ')} · depuis ${fm(D.quadrants.current.since)}</div></div>`:'') +
+ (D.wicksell? `<div class="sig"><div class="sub">Wicksell · 10 ans US vs croissance</div><div class="big ${D.wicksell.current.signal}">${LBL[D.wicksell.current.signal]}</div><div>${num(D.wicksell.current.taux,2)} % contre ${num(D.wicksell.current.croissance,2)} %</div></div>`:'') +
  (D.profits? `<div class="sig"><div class="sub">Contexte · Profits US (1 an)</div><div class="big">${pct(D.profits.current.profits/100)}</div>
   <div>emploi US sur 1 an : ${pct(D.profits.current.emploi/100)} (${fm(D.profits.current.emploi_date)})</div></div>`:'') +
  (D.dette? `<div class="sig"><div class="sub">Contexte · Dette publique France</div><div class="big">${num(D.dette.current.q?D.dette.current.q.v:D.dette.current.v)} %</div><div>du PIB (${D.dette.current.q?D.dette.current.q.q.replace('-Q',', T'):D.dette.current.year})</div></div>`:'');
 document.getElementById('synthtxt').innerHTML = comb + (fragile? " <span class='warn'>Attention : au moins un ratio est à moins de 5 % de sa moyenne. Dans cette zone, la règle a souvent produit des allers-retours.</span>":"") +
  "<br><span class='sub'>Lecture mécanique des règles publiées par Charles Gave. Information, pas un conseil en investissement.</span>";
+
+// ---------- Tableau des signaux (calculé à partir de data/*.json à chaque chargement)
+(function signalTable(){
+  const host=document.getElementById('sigtab'); if(!host) return;
+  const CASH='Cash / prudence (par défaut)';
+  const A = s => `<span class="asset ${s}">${({or:'Or',obligations:'Obligations',actions:'Actions'})[s]}</span>`;
+  const A2 = s => `<span class="asset ${s}">${({or:'Or',obligations:'Obligations',actions:'Actions',cash:'Cash'})[s]}</span>`;
+  const ctx = '<span class="st ctx">Indéfini / contexte</span>';
+  const rows=[];
+  const rule = (g, href, name, nm) => { if(!g) return; const c=g.current, near=Math.abs(c.gap_pct)<0.05;
+    rows.push({href, name, val:`${num(c.ratio)}<div class="sub">${fm(c.date)}</div>`, ref:`Moyenne mobile 7 ans : ${num(c.ma)}<div class="sub">${nm}</div>`,
+      gap:pct(c.gap_pct), st:`<span class="st ok">✅ Validé</span>${near?'<div class="sub warn">à moins de 5 % de la moyenne : signal fragile</div>':''}`,
+      asset:A(c.signal)+`<div class="sub">depuis ${fm(c.since)}</div>`, rule:true, sig:c.signal}); };
+  rule(D.g15,'g15','Graphique 15 · Or / obligations US','au-dessus → or ; en dessous → obligations');
+  rule(D.g17,'g17','Graphique 17 · Actions (S&amp;P 500 TR) / or','au-dessus → actions ; en dessous → or');
+  if(D.g23){ const g=D.g23, c=g.current, L=g.levels; let st, asset, gap, sig=null;
+    if(c.ratio>=L.haut){ st='<span class="st ok">✅ Validé (zone haute)</span>'; sig='or'; asset=A('or')+'<div class="sub">« vendre les actions et acheter de l\'or »</div>'; gap=pct(c.ratio/L.haut-1)+'<div class="sub">vs 1,465 g</div>'; }
+    else if(c.ratio<=L.bas){ st='<span class="st ok">✅ Validé (zone basse)</span>'; sig='actions'; asset=A('actions')+'<div class="sub">« vendre l\'or et acheter des actions »</div>'; gap=pct(c.ratio/L.bas-1)+'<div class="sub">vs 0,459 g</div>'; }
+    else { st='<span class="st no">❌ Non validé</span><div class="sub">entre les deux seuils</div>'; asset = (D.quadrants&&D.quadrants.current)? `<span class="sub">aucun seuil atteint → voir le quadrant :</span><div>${D.quadrants.current.allowed.map(a=>`<span class="asset ${a}">${({or:'Or',obligations:'Obligations',actions:'Actions',cash:'Cash'})[a]}</span>`).join(' + ')}</div>` : `<span class="asset cash">${CASH}</span><div class="sub">aucun seuil atteint</div>`;
+      const dB=c.ratio/L.bas-1, dH=c.ratio/L.haut-1; gap=`${pct(dB)} <span class="sub">vs 0,459 g</span><div>${pct(dH)} <span class="sub">vs 1,465 g</span></div>`; }
+    rows.push({href:'g23', name:'Graphique 23 · Dividendes du S&amp;P 500 en grammes d\'or', val:`${num(c.ratio,3)} g<div class="sub">${fm(c.date)}</div>`,
+      ref:'≤ 0,459 g → actions · ≥ 1,465 g → or<div class="sub">repères intermédiaires 0,66 g et 1 g (sans signal)</div>', gap, st, asset, rule:true, sig}); }
+  // Articles de Gave (Institut des Libertés)
+  const AN={or:'Or',obligations:'Obligations',actions:'Actions',cash:'Cash'}, CH=a=>`<span class="asset ${a}">${AN[a]}</span>`, P2=x=>(x>=0?'+':'')+num(x,2)+' pt';
+  const Q=D.quadrants&&D.quadrants.current;
+  if(Q){ rows.push({href:'quadrants', name:'Quadrants inflation / croissance (« Les cycles longs »)', val:`<b>${Q.label}</b><div class="sub">${fm(Q.date)} · depuis ${fm(Q.since)}</div>`,
+      ref:'Inflation = or / cash au-dessus de sa MM 7 ans<div class="sub">Croissance = actions / or au-dessus de sa MM 7 ans</div><div class="sub warn">MM 7 ans : hypothèse du site, Gave ne donne pas le critère</div>',
+      gap:`${pct(Q.gold_cash_gap)} <span class="sub">or/cash</span><div>${pct(Q.r17_gap)} <span class="sub">actions/or</span></div>`,
+      st:'<span class="st ok">✅ Validé (hypothèse)</span>', asset:Q.allowed.map(CH).join(' + ')+`<div class="sub">exclus : ${Q.excluded.map(a=>AN[a].toLowerCase()).join(', ')}</div>`, rule:true, sig:null, allowed:Q.allowed}); }
+  else rows.push({href:'quadrants',name:'Quadrants inflation / croissance',val:'—',ref:'—',gap:'—',st:'<span class="st no">Données indisponibles</span>',asset:'—'});
+  if(D.wicksell){ const c=D.wicksell.current;
+    rows.push({href:'wicksell', name:'Règle de Wicksell · 10 ans US vs croissance nominale', val:`${num(c.taux,2)} %<div class="sub">10 ans US, ${fm(c.date)}</div>`,
+      ref:`Croissance moyenne du PIB nominal sur 7 ans : ${num(c.croissance,2)} %<div class="sub">taux &lt; croissance → or ; vente de l'or seulement si 10 ans ≥ 5,9 %</div>`,
+      gap:P2(c.ecart)+`<div class="sub">${P2(c.taux-5.9)} vs 5,9 %</div>`, st:'<span class="st ok">✅ Validé</span>', asset:CH(c.signal)+`<div class="sub">depuis ${fm(c.since)}</div>`, rule:true, sig:c.signal}); }
+  else rows.push({href:'wicksell',name:'Règle de Wicksell',val:'—',ref:'—',gap:'—',st:'<span class="st no">Données indisponibles</span>',asset:'—'});
+  if(D.frbonds){ const c=D.frbonds.current;
+    rows.push({href:'frbonds', name:'Taux 10 ans France vs moyenne 7 ans', val:`${num(c.taux,2)} %<div class="sub">${fm(c.date)}</div>`, ref:`Moyenne 7 ans : ${num(c.ma,2)} %<div class="sub">au-dessus → pas d'obligations</div>`,
+      gap:P2(c.taux-c.ma), st:'<span class="st ok">✅ Validé</span>', asset:c.above?`<span class="asset obligations">Pas d'obligations françaises</span><div class="sub">depuis ${fm(c.since)}</div>`:CH('obligations')+'<div class="sub">permises</div>', rule:true, sig:null, excl:c.above?'obligations':null});
+    const R={acheter:['✅ Validé (> 5 %)','Acheter les obligations longues','ok'],neutre:['❌ Non validé (entre 2 et 5 %)','Pas de signal','no'],commencer_vendre:['✅ Validé (entre 1 et 2 %)','Obligations françaises : commencer à vendre','ok'],tout_vendre:['✅ Validé (< 1 %)','Obligations françaises : tout vendre','ok']}[c.real_status];
+    rows.push({href:'frbonds', name:'Rendement réel des obligations françaises (« loi de Gresham »)', val:`${num(c.real,2)} %<div class="sub">${num(c.taux_real_date,2)} % − inflation ${num(c.infl,2)} %, ${fm(c.real_date)}</div>`,
+      ref:'> 5 % acheter · < 2 % commencer à vendre · < 1 % tout vendre<div class="sub">moyenne de long terme 2 % selon Gave</div>', gap:`${P2(c.real-2)} <span class="sub">vs 2 %</span><div>${P2(c.real-1)} <span class="sub">vs 1 %</span></div>`,
+      st:`<span class="st ${R[2]}">${R[0]}</span>`, asset:`<span class="asset obligations">${R[1]}</span>`, rule:true, sig:null, excl:(c.real_status==='commencer_vendre'||c.real_status==='tout_vendre')?'obligations':null}); }
+  else rows.push({href:'frbonds',name:'Obligations françaises',val:'—',ref:'—',gap:'—',st:'<span class="st no">Données indisponibles</span>',asset:'—'});
+  if(D.surachat){ const c=D.surachat.current;
+    rows.push({href:'surachat', name:'Or « suracheté » (hausse ≥ 65 % sur 12 mois)', val:`${pct(c.yoy)}<div class="sub">sur 12 mois, ${fm(c.date)}</div>`, ref:`+65 %<div class="sub">max. des 12 derniers mois : ${pct(c.max_12m)} (${fm(c.max_12m_date)})</div>`,
+      gap:P2((c.yoy-0.65)*100).replace(' pt',' pts'), st:c.alert?'<span class="st no">⚠️ Avertissement</span><div class="sub">repli technique probable, pas un signal de vente</div>':'<span class="st ctx">Pas d\'alerte</span><div class="sub">« Avertissement », jamais un signal de vente</div>', asset:'<span class="sub">—</span>'}); }
+  else rows.push({href:'surachat',name:'Or « suracheté »',val:'—',ref:'—',gap:'—',st:'<span class="st no">Données indisponibles</span>',asset:'—'});
+  const ctxRow = (href,name,val,ref,gap,why) => rows.push({href,name,val,ref,gap,st:ctx+`<div class="sub">${why}</div>`,asset:'<span class="sub">—</span>'});
+  if(D.cac){ const c=D.cac.current; ctxRow('cac','CAC 40 en USD / S&amp;P 500',`${num(c.ratio)}<div class="sub">${fm(c.date)} · base 100 = 1999</div>`,`Moyenne 7 ans : ${num(c.ma)}<div class="sub">indicative</div>`,pct(c.ratio/c.ma-1),'pas de règle de décision dans les pages du livre'); }
+  if(D.profits){ const c=D.profits.current; ctxRow('profits','Profits US / emploi (sur 1 an)',`${pct(c.profits/100)}<div class="sub">profits, ${fm(c.profits_date)}</div>`,`Emploi : ${pct(c.emploi/100)}<div class="sub">${fm(c.emploi_date)}</div>`,'—','indicateur avancé de l\'emploi, pas de seuil'); }
+  if(D.dette){ const c=D.dette.current, v=c.q?c.q.v:c.v; ctxRow('dette','Dette publique France (% du PIB)',`${num(v)} %<div class="sub">${c.q?c.q.q.replace('-Q',', T'):c.year}</div>`,'60 %<div class="sub">plafond de Maastricht, pas une règle de Gave</div>',`${v>=60?'+':''}${num(v-60)} pts`,'aucun seuil d\'investissement chez Gave'); }
+  if(D.depenses){ const f=D.depenses.countries.FRA; if(f&&f.total_pct_pib) ctxRow('depenses','Dépense publique France (% du PIB)',`${num(f.total_pct_pib.v)} %<div class="sub">${f.total_pct_pib.year}</div>`,'—','—','comparaison de croissance État / PIB, pas de seuil'); }
+  if(D.change){ const c=D.change.current; ctxRow('change','Change effectif de l\'euro (nominal)',`${num(c.nominal)}<div class="sub">${fm(c.date)}</div>`,'100 = octobre 1990<div class="sub">base de l\'indice</div>',pct(c.nominal/100-1),'pas de signal d\'investissement'); }
+  if(D.rente){ const c=D.rente.current; ctxRow('rente','Rente française / profits (base 100 en 1981)',`${num(c.rente_fr,0)}<div class="sub">rente, ${fm(c.rente_date)}</div>`,`Profits : ${num(c.profits,0)}<div class="sub">${c.profits_year}</div>`,pct(c.rente_fr/c.profits-1),'lien avec le chômage, pas de seuil'); }
+  if(D.export){ const c=D.export.current; ctxRow('export','Part de la France dans les exportations OCDE',`${num(c.fra_idx,0)}<div class="sub">${c.year} · part ${num(c.fra_share,2)} %</div>`,'100 = 1982<div class="sub">base de l\'indice</div>',pct(c.fra_idx/100-1),'indicateur de compétitivité, pas de seuil'); }
+  const H=['Indicateur','Valeur actuelle','Référence de la règle','Écart','Statut','Actif désigné'];
+  const sigs=[...new Set(rows.filter(r=>r.rule&&r.sig).map(r=>r.sig))];
+  const noSig = rows.filter(r=>r.rule&&!r.sig&&!r.allowed&&!r.excl&&/Non validé/.test(r.st)).length;
+  const exclB = rows.some(r=>r.excl==='obligations');
+  const Qs = D.quadrants&&D.quadrants.current;
+  let summary;
+  if(Qs){ const conflict=sigs.filter(a=>!Qs.allowed.includes(a));
+    summary = `<p><b>Régime selon les quadrants</b> (hypothèse MM 7 ans) : <b>${Qs.label}</b> → ${Qs.allowed.map(A2).join(' + ')} ; exclus : ${Qs.excluded.map(a=>({or:'or',obligations:'obligations',actions:'actions',cash:'cash'})[a]).join(', ')}.
+      Règles chiffrées validées : ${sigs.length?sigs.map(A2).join(' · '):'aucune'}${exclB?' · <span class="asset obligations">pas d\'obligations françaises</span>':''}.
+      ${conflict.length?`<span class="warn">Contradiction : ${conflict.map(a=>AN[a].toLowerCase()).join(', ')} désigné(es) par une règle mais exclu(es) par le quadrant.</span>`:'Pas de contradiction entre les règles validées et le quadrant.'}</p>
+      <p class="sub"><b>Cash</b> : dans ce site, le cash n'est plus seulement un statut par défaut. Il est <b>désigné par le quadrant</b> quand celui-ci l'autorise (bust déflationniste, bust inflationniste) et exclu en boom déflationniste. Quand une règle (graphique 23) n'atteint aucun seuil, elle renvoie au quadrant. Si les données des quadrants manquent, on revient au statut « ${CASH} ». Les indicateurs sans règle chiffrée restent « Indéfini / contexte ». Touchez une ligne pour aller au graphique.<br><b>Information, pas un conseil en investissement.</b></p>`; }
+  else summary = `<p>Actifs désignés par les règles chiffrées validées : ${sigs.length? sigs.map(A).join(' · ') : ''}${noSig? (sigs.length?' · ':'')+`<span class="asset cash">${CASH}</span> pour ${noSig} règle(s) sans seuil atteint`:''}${!sigs.length&&!noSig?`<span class="asset cash">${CASH}</span>`:''}.</p>
+    <p class="sub"><b>Cash</b> : Gave ne donne pas de seuil chiffré pour le cash. « ${CASH} » est un statut affiché quand aucune règle chiffrée ne désigne l'or, les obligations ou les actions : c'est un statut par défaut, pas une règle. Touchez une ligne pour aller au graphique.<br><b>Information, pas un conseil en investissement.</b></p>`;
+  host.innerHTML = `<table class="sigt"><thead><tr>${H.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>`+
+    rows.map(r=>`<tr data-href="${r.href}" tabindex="0" role="link" aria-label="Aller au graphique"><td data-l="${H[0]}"><b>${r.name}</b></td>${[r.val,r.ref,r.gap,r.st,r.asset].map((v,i)=>`<td data-l="${H[i+1]}"><div>${v}</div></td>`).join('')}</tr>`).join('')+
+    `</tbody></table>${summary}`;
+  host.querySelectorAll('tr[data-href]').forEach(tr=>{ const go=()=>document.getElementById(tr.dataset.href).scrollIntoView({behavior:'smooth',block:'start'});
+    tr.addEventListener('click', go); tr.addEventListener('keydown', e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); go(); } }); });
+})();
 
 // Profits / emploi
 if(D.profits){ const p=D.profits;
@@ -207,6 +401,82 @@ if(D.g23){ const g=D.g23, x=g.dates.map(toDate), L=g.levels, c=g.current;
   <div class="sub">Médiane depuis 1925 : ${num(c.median,2)} g · le ratio a été plus bas que maintenant ${Math.round(c.pct_below*100)} % du temps</div></div>`;
 } else document.getElementById('c23').innerHTML='<p class="warn">Données indisponibles.</p>';
 
+// ---------- Articles de Gave (Institut des Libertés) : quadrants, Wicksell, obligations françaises, or suracheté
+const nextM = p => { let [y,m]=p.split('-').map(Number); m++; if(m>12){m=1;y++;} return `${y}-${String(m).padStart(2,'0')}-01`; };
+const band = (p, col) => ({type:'rect',xref:'x',yref:'paper',x0:toDate(p.start),x1:nextM(p.end),y0:0,y1:1,fillcolor:col,line:{width:0},layer:'below'});
+const hline = (y, col, dash='dash', yref='y') => ({type:'line',xref:'paper',x0:0,x1:1,yref,y0:y,y1:y,line:{color:col,dash,width:1}});
+const hlab = (y, t, col, yref='y', log=false) => ({xref:'paper',x:0.005,yref,y:log?Math.log10(y):y,text:t,showarrow:false,yshift:8,xanchor:'left',font:{color:col,size:11},bgcolor:'rgba(13,17,23,0.75)'});
+const NA = (id, what) => { const e=document.getElementById(id); if(e) e.innerHTML=`<p class="warn">Données indisponibles${what?' ('+what+')':''}.</p>`; };
+const QCOL = {boom_defl:'rgba(63,185,80,0.13)', bust_defl:'rgba(88,166,255,0.13)', boom_infl:'rgba(227,179,65,0.13)', bust_infl:'rgba(248,81,73,0.15)'};
+const QTXT = {boom_defl:'Boom déflationniste', bust_defl:'Bust déflationniste', boom_infl:'Boom inflationniste', bust_infl:'Bust inflationniste'};
+const QRULE = {boom_defl:'ni or ni cash', bust_defl:'ni actions ni or : du cash', boom_infl:'aucune obligation', bust_infl:'ni obligations ni actions : or et cash'};
+const ANAME = {or:'Or', obligations:'Obligations', actions:'Actions', cash:'Cash'};
+const chip = a => `<span class="asset ${a}">${ANAME[a]}</span>`;
+const pt = x => (x>=0?'+':'')+num(x,2)+' pt';
+
+if(D.quadrants){ const q=D.quadrants, c=q.current, x=q.dates.map(toDate);
+ const i17={}; D.g17.dates.forEach((d,k)=>i17[d]=k);
+ plot('cq',[
+   {x,y:q.ratio,name:'Or / cash (bons du Trésor 3 mois capitalisés)',line:{color:'#e3b341',width:1.6},f:'.1f'},
+   {x,y:q.ma,name:'Moyenne mobile 7 ans (or / cash)',line:{color:'#58a6ff',width:1.6,dash:'dot'},f:'.1f'},
+   {x,y:q.dates.map(d=>D.g17.ratio[i17[d]]),name:'Actions (S&P 500 TR) / or',yaxis:'y2',line:{color:'#3fb950',width:1.6},f:'.1f'},
+   {x,y:q.dates.map(d=>D.g17.ma[i17[d]]),name:'Moyenne mobile 7 ans (actions / or)',yaxis:'y2',line:{color:'#58a6ff',width:1.6,dash:'dot'},f:'.1f'}],
+  {...dark, margin:{l:55,r:14,t:10,b:40},
+   yaxis:{gridcolor:'#21262d',type:'log',domain:[0.53,1],title:{text:'inflation : or / cash',font:{size:11}}},
+   yaxis2:{gridcolor:'#21262d',type:'log',domain:[0,0.47],title:{text:'croissance : actions / or',font:{size:11}}},
+   shapes:q.periods.map(p=>band(p,QCOL[p.code]))},cfg);
+ document.getElementById('curq').innerHTML=`<div class="sig"><div class="sub">Quadrant actuel (${fm(c.date)}) — hypothèse MM 7 ans</div><div class="big">${c.label}</div>
+   <div>depuis <b>${fm(c.since)}</b> · Gave : « ${QRULE[c.code]} »</div><div>Actifs permis : ${c.allowed.map(chip).join(' · ')} · exclus : ${c.excluded.map(a=>ANAME[a]).join(', ')}</div></div>
+  <div class="sig"><div class="sub">Les deux tests</div><div>Inflation (l'or bat le cash) : <b>${c.inflation?'oui':'non'}</b> · or/cash ${pct(c.gold_cash_gap)} vs sa MM 7 ans</div>
+   <div>Croissance (les actions battent l'or) : <b>${c.croissance?'oui':'non'}</b> · actions/or ${pct(c.r17_gap)} vs sa MM 7 ans</div>
+   <div class="sub">Cash : taux 3 mois US (FRED TB3MS, dernier ${fm(q.cash_last_rate_date)} : ${num(c.tb3,2)} %), prolongé au dernier taux connu.</div></div>`;
+ document.getElementById('qleg').innerHTML=Object.keys(QTXT).map(k=>`<span class="qchip" style="background:${QCOL[k].replace(/0\.1[35]\)/,'0.45)')}">${QTXT[k]}</span>`).join(' ');
+ const hist=q.periods.filter(p=>p.end>='1980'), long=hist.filter(p=>{const [a,b]=[p.start,p.end].map(s=>+s.slice(0,4)*12+ +s.slice(5)); return b-a>=11;});
+ document.getElementById('qhist').innerHTML=long.map(p=>`<li>${fm(p.start)} → ${fm(p.end)} : <b>${p.label}</b></li>`).join('');
+} else NA('cq','FRED TB3MS');
+
+if(D.wicksell){ const w=D.wicksell, c=w.current, x=w.dates.map(toDate);
+ plot('cw',[
+   {x,y:w.taux,name:'Taux 10 ans US',line:{color:'#58a6ff',width:1.8},u:' %',f:'.2f'},
+   {x,y:w.croissance,name:'Croissance annuelle moyenne du PIB nominal US sur 7 ans',line:{color:'#f85149',width:1.8},u:' %',f:'.2f'}],
+  {...dark,yaxis:{gridcolor:'#21262d',type:'linear',title:'%'},shapes:w.periods.filter(p=>p.code==='or').map(p=>band(p,'rgba(227,179,65,0.12)')).concat([hline(w.gave_threshold,'#e3b341')]),
+   annotations:[hlab(w.gave_threshold,'5,9 % : seuil de vente de l\'or cité par Gave','#e3b341')]},cfg);
+ document.getElementById('curw').innerHTML=`<div class="sig"><div class="sub">Règle de Wicksell (${fm(c.date)})</div><div class="big ${c.signal}">${LBL[c.signal]}</div>
+   <div>Taux 10 ans <b>${num(c.taux,2)} %</b> ${c.taux<c.croissance?'&lt;':'≥'} croissance nominale moyenne sur 7 ans <b>${num(c.croissance,2)} %</b> (écart ${pt(c.ecart)})</div><div>depuis ${fm(c.since)}</div></div>
+  <div class="sig"><div class="sub">Seuil de Gave pour vendre son or</div><div>10 ans US ≥ <b>5,9 %</b> : il manque <b>${pt(5.9-c.taux)}</b></div><div class="sub">PIB : dernier trimestre publié ${w.gdp_last.replace('Q',' T')} ; les mois suivants reprennent ce chiffre.</div></div>`;
+} else NA('cw','FRED GDP / GS10');
+
+if(D.frbonds){ const f=D.frbonds, c=f.current, x=f.dates.map(toDate), i={}; f.dates.forEach((d,k)=>i[d]=k);
+ const up=f.events.filter(e=>e.to==='au-dessus'), dn=f.events.filter(e=>e.to==='en dessous');
+ plot('cf',[
+   {x,y:f.taux,name:'Taux 10 ans France',line:{color:'#f85149',width:1.8},u:' %',f:'.2f'},
+   {x,y:f.ma,name:'Moyenne mobile 7 ans',line:{color:'#58a6ff',width:2},u:' %',f:'.2f'},
+   {x:up.map(e=>toDate(e.date)),y:up.map(e=>f.taux[i[e.date]]),mode:'markers',name:'Passage au-dessus → pas d\'obligations',hoverinfo:'skip',marker:{symbol:'triangle-up',size:10,color:'#f85149'}},
+   {x:dn.map(e=>toDate(e.date)),y:dn.map(e=>f.taux[i[e.date]]),mode:'markers',name:'Passage en dessous → obligations permises',hoverinfo:'skip',marker:{symbol:'triangle-down',size:10,color:'#3fb950'}}],
+  {...dark,yaxis:{gridcolor:'#21262d',type:'linear',title:'%'}},cfg);
+ const L=f.levels, rx=f.real.dates.map(toDate);
+ plot('cfr',[
+   {x:rx,y:f.real.v,name:'Rendement réel (10 ans − inflation sur 1 an)',line:{color:'#e3b341',width:1.8},u:' %',f:'.2f'},
+   {x:rx,y:f.real.infl,name:'Inflation France sur 1 an',line:{color:'#8b949e',width:1},u:' %',f:'.2f',visible:'legendonly'}],
+  {...dark,yaxis:{gridcolor:'#21262d',type:'linear',title:'%',zeroline:true,zerolinecolor:'#444'},
+   shapes:[hline(L.acheter,'#3fb950'),hline(L.commencer_vendre,'#d29922'),hline(L.tout_vendre,'#f85149'),hline(c.real_mean,'#8b949e','dot')].concat(f.cpi_split?[{type:'line',x0:nextM(f.cpi_split),x1:nextM(f.cpi_split),yref:'paper',y0:0,y1:1,line:{color:'#8b949e',dash:'dot',width:1}}]:[]),
+   annotations:[hlab(L.acheter,'5 % : acheter les obligations les plus longues','#3fb950'),hlab(L.commencer_vendre,'2 % : commencer à vendre (moyenne de long terme selon Gave)','#d29922'),hlab(L.tout_vendre,'1 % : tout vendre','#f85149'),
+     {xref:'paper',x:0.995,xanchor:'right',y:c.real_mean,text:`moyenne ici depuis ${c.real_mean_from.slice(0,4)} : ${num(c.real_mean,2)} %`,showarrow:false,yshift:-9,font:{color:'#8b949e',size:11}}]},cfg);
+ const RS={acheter:['Au-dessus de 5 % : acheter les obligations les plus longues','actions'],neutre:['Entre 2 % et 5 % : pas de signal (garder)',''],commencer_vendre:['Entre 1 % et 2 % : commencer à vendre','warn'],tout_vendre:['Sous 1 % : tout vendre (cash ou un autre marché obligataire)','or']}[c.real_status];
+ document.getElementById('curf').innerHTML=`<div class="sig"><div class="sub">Taux 10 ans France (${fm(c.date)})</div><div class="big">${num(c.taux,2)} %</div>
+   <div>${c.above?'<b>au-dessus</b>':'<b>en dessous</b>'} de sa moyenne 7 ans (${num(c.ma,2)} %) depuis <b>${fm(c.since)}</b> → ${c.above?'<b>pas d\'obligations françaises</b>':'obligations permises'}</div></div>
+  <div class="sig"><div class="sub">Rendement réel (${fm(c.real_date)})</div><div class="big ${RS[1]}">${num(c.real,2)} %</div><div>${num(c.taux_real_date,2)} % − inflation ${num(c.infl,2)} % · ${RS[0]}</div></div>`;
+} else { NA('cf','FRED IRLTLT01FRM156N'); NA('cfr','FRED IPC France'); }
+
+if(D.surachat){ const s=D.surachat, c=s.current, x=s.dates.map(toDate);
+ plot('co',[{x,y:s.v,name:'Or : variation sur 12 mois',line:{color:'#e3b341',width:1.6},u:' %',f:'.1f'}],
+  {...dark,yaxis:{gridcolor:'#21262d',type:'linear',title:'%',zeroline:true,zerolinecolor:'#444'},
+   shapes:s.periods.map(p=>band(p,'rgba(248,81,73,0.18)')).concat([hline(s.threshold,'#f85149')]),annotations:[hlab(s.threshold,'+65 % : or « suracheté »','#f85149')]},cfg);
+ document.getElementById('curo').innerHTML=`<div class="sig"><div class="sub">Or sur 12 mois (${fm(c.date)})</div><div class="big ${c.alert?'warn':''}">${pct(c.yoy)}</div>
+   <div>${c.alert?'⚠️ <b>Avertissement</b> : hausse ≥ 65 % sur un an, repli technique probable (pas un signal de vente)':'Pas d\'alerte : hausse inférieure à 65 % sur un an'}</div></div>
+  <div class="sig"><div class="sub">Sur les 12 derniers mois</div><div>Maximum : <b>${pct(c.max_12m)}</b> (${fm(c.max_12m_date)})</div><div class="sub">Once : ${num(c.gold,0)} $ contre ${num(c.gold_12m,0)} $ un an plus tôt</div></div>`;
+} else NA('co','or');
+
 // ---------- Rente et profits
 if(D.rente){ const r=D.rente, c=r.current;
  plot('cr',[
@@ -248,6 +518,11 @@ document.getElementById('methodo-body').innerHTML = `
 <li><b>Graphique 23</b> : dividendes de Shiller (moyenne mensuelle annualisée) jusqu'en ${D.g23?fm(D.g23.splice):'—'}. Ensuite, dividendes <b>implicites</b> sur 12 mois, déduits de l'écart entre le S&amp;P 500 avec et sans dividendes (Yahoo <code>^SP500TR</code> et <code>^GSPC</code>) ; l'écart avec Shiller est d'environ 1 % sur 2005–2024. Or : prix mensuel divisé par 31,1035 g/once.</li>
 <li><b>Rente / profits</b> : taux interbancaires à 3 mois de l'OCDE via FRED (<code>IR3TIB01FRM156N</code>, <code>IR3TIB01DEM156N</code>), capitalisés chaque mois, avant impôts. Profits : AMECO <code>UOGC</code> (excédent brut d'exploitation des sociétés, nominal). Chômage : AMECO <code>ZUTN</code>.</li>
 <li><b>Exportations</b> : Banque mondiale <code>TX.VAL.MRCH.CD.WT</code> (exportations de marchandises en dollars courants) pour la France, les États-Unis et l'agrégat OCDE (<code>OED</code>, membres actuels sur tout l'historique).</li>
+<li><b>Quadrants (hypothèse)</b> : cash = bons du Trésor US à 3 mois (FRED <code>TB3MS</code>), capitalisés chaque mois au taux du mois précédent ; or / cash et actions / or (graphique 17) comparés à leur moyenne mobile 7 ans. Le critère de la moyenne 7 ans est <b>une hypothèse du site</b> : Gave ne le précise pas.</li>
+<li><b>Wicksell</b> : croissance annuelle moyenne du PIB nominal US sur 28 trimestres (FRED <code>GDP</code>), appliquée aux trois mois du trimestre puis prolongée jusqu'au mois en cours ; taux 10 ans identique à celui du graphique 15.</li>
+<li><b>Obligations françaises</b> : taux 10 ans OCDE (FRED <code>IRLTLT01FRM156N</code>). Inflation sur 12 mois : IPC OCDE (<code>FRACPIALLMINMEI</code>) jusqu'en ${D.frbonds&&D.frbonds.cpi_split?fm(D.frbonds.cpi_split):'—'}, puis IPCH Eurostat (<code>CP0000FRM086NEST</code>), car la série OCDE n'est plus mise à jour sur FRED.</li>
+<li><b>Or suracheté</b> : variation sur 12 mois du prix mensuel de l'or ; seuil de 65 % donné par Gave.</li>
+<li><b>Téléchargements</b> : délais courts (8 s pour la connexion, 30 s pour la lecture) et 2 essais. Si un serveur ne répond pas, les autres séries de ce serveur sont lues directement dans le cache. Si un bloc ne peut pas être recalculé, la version déjà publiée est conservée.</li>
 <li><b>Bulles d'information</b> : la date affichée est le mois (séries mensuelles : fin de mois ou moyenne du mois selon la source), le trimestre ou l'année. Il n'y a pas de données quotidiennes.</li>
 <li><b>Fréquence</b> : mensuelle pour les graphiques de marché et le change, trimestrielle ou annuelle pour la dette et les dépenses. Le dernier point est le mois en cours, recalculé à chaque mise à jour hebdomadaire. Un signal en cours de mois peut donc encore changer avant la fin du mois.</li></ul>
 <h3>Comparaison avec les graphiques du livre</h3><ul>
@@ -255,6 +530,7 @@ document.getElementById('methodo-body').innerHTML = `
 <li><b>Graphique 17</b> : les dates de sortie (1931, 1972, 2002) sont proches de celles du livre (5/1931, 4/1972, 10/2002). La fin 2024 donne ici ~72 pour le ratio et ~67 pour la moyenne. Sur la photo, l'axe du livre ne semble pas correspondre à une « base 100 en 2000 » (le pic de 2000 y est vers 50). Ses étiquettes finales (~70 / 63,2) sont donc difficiles à comparer avec certitude.</li>
 <li><b>Dette, dépenses, change</b> : les grandes tendances du livre se retrouvent (voir les détails sous chaque graphique), avec des niveaux différents à cause des révisions statistiques. Pour le DM, la BRI donne un pic de ~113 en 1995 au lieu de ~130 chez Gave, car le panier de monnaies est différent.</li>
 <li><b>Graphique 23</b> : on retrouve les grands creux (1934, 1980, 2011) et le sommet de 1997–2000. Le pic de 2000 est à ~1,8 g, au-dessus du ~1,5 g du livre. Le niveau actuel (~0,64 g) est proche du 0,660 inscrit en fin de courbe dans le livre. La ligne « dividendes en dollars » du livre (53,404 en fin de courbe) n'a pas la même échelle que les données de Shiller (~80 $ aujourd'hui) : je ne sais pas quelle unité il utilise.</li>
+<li><b>Graphique 17, date du dernier passage à l'or</b> : ici, février 2025 (écart de −0,6 % seulement ce mois-là, puis sous la moyenne tous les mois suivants). Gave parle de juillet 2025. Avec des fins de mois, des données hebdomadaires ou quotidiennes, ou le S&amp;P sans dividendes, on obtient janvier à mars 2025, jamais juillet. L'écart vient sans doute de ses séries ou de son mode de calcul, qu'il ne publie pas.</li>
 <li><b>Rente / profits et exportations</b> : les écarts sont détaillés sous chaque graphique (2002 : rente ~550 / ~346 contre ~450 / ~300 ; part de la France à l'export ~94 contre ~75).</li></ul>
 <h3>Limites importantes</h3><ul>
 <li>Les règles ont été conçues et calibrées <b>après coup</b> sur ces mêmes données. Leurs bons résultats passés sont en partie un effet de sélection.</li>

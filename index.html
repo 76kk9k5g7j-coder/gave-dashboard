@@ -1,12 +1,14 @@
 <!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Tableau de bord – règles de Charles Gave</title><link rel="stylesheet" href="style.css">
+<title>Tableau de bord – règles de Charles Gave</title><link rel="stylesheet" href="style.css"><link rel="icon" href="data:,">
 <script src="assets/plotly.min.js"></script><script src="assets/plotly-locale-fr.js"></script><script src="data/bundle.js"></script></head><body>
 <header><h1>Or · Obligations · Actions — les règles de Charles Gave</h1>
-<div class="sub">💡 Touche longue (mobile) ou survol (ordinateur) sur un graphique : une bulle affiche la date et les valeurs exactes.</div>
-<div class="sub">Règles décrites par Charles Gave (<i>Université de l'Épargne</i>), appliquées aux données actuelles. Mise à jour des données : <b id="upd">—</b></div>
-<nav class="sub"><a href="#synthese">Synthèse</a><a href="#g15">Or / obligations</a><a href="#g17">Actions / or</a><a href="#g23">Dividendes / or</a><a href="#profits">Profits / emploi</a><a href="#cac">CAC / S&amp;P</a><a href="#dette">Dette France</a><a href="#depenses">Dépenses / PIB</a><a href="#change">DM / euro</a><a href="#rente">Rente / profits</a><a href="#export">Exportations</a><a href="#methodo">Méthodologie &amp; limites</a></nav></header>
+<div class="sub">💡 Touche longue (mobile) ou survol (ordinateur) sur un graphique : une bulle affiche la date et les valeurs exactes. Au-dessus de chaque graphique : choix de la période, zoom ＋/－, « Déplacer » pour faire glisser la période, « Réinitialiser » (ou double appui) et plein écran.</div>
+<div class="sub">Règles décrites par Charles Gave (<i>Université de l'Épargne</i> et articles de l'Institut des Libertés), appliquées aux données actuelles. Mise à jour des données : <b id="upd">—</b></div>
+<nav class="sub"><a href="#signaux">Tableau des signaux</a><a href="#synthese">Synthèse</a><a href="#g15">Or / obligations</a><a href="#g17">Actions / or</a><a href="#g23">Dividendes / or</a><a href="#quadrants">Quadrants</a><a href="#wicksell">Wicksell</a><a href="#frbonds">Obligations FR</a><a href="#surachat">Or suracheté</a><a href="#profits">Profits / emploi</a><a href="#cac">CAC / S&amp;P</a><a href="#dette">Dette France</a><a href="#depenses">Dépenses / PIB</a><a href="#change">DM / euro</a><a href="#rente">Rente / profits</a><a href="#export">Exportations</a><a href="#methodo">Méthodologie &amp; limites</a></nav></header>
 <main>
 <section class="card disc"><b>Information, pas un conseil en investissement.</b> Cette page applique mécaniquement des règles publiées par Charles Gave à des données publiques gratuites. Elle ne tient pas compte de ta situation, de ta fiscalité ni de ton horizon. Ces règles se sont trompées plusieurs fois par le passé (voir chaque graphique) et rien ne garantit qu'elles fonctionneront à l'avenir. Les données reconstruites diffèrent de celles du livre.</section>
+
+<section id="signaux" class="card"><h2>Tableau des signaux</h2><div class="sub">Tous les indicateurs du site, recalculés à chaque mise à jour des données. Règles chiffrées de Gave : graphiques 15, 17 et 23 du livre, et articles de l'Institut des Libertés (quadrants, Wicksell, obligations françaises, or suracheté). Les autres indicateurs sont du contexte.</div><div id="sigtab"></div></section>
 
 <section id="synthese" class="card"><h2>Synthèse des signaux</h2><div class="grid" id="synth"></div><p id="synthtxt"></p></section>
 
@@ -44,6 +46,48 @@
 <li><b>Au-dessus de 1,465 g</b> : 1930–1931, 1956–1973 et 1997–2005. La sortie de 1997–2000 aurait été bien placée, avant le krach de 2000–2002 et la hausse de l'or. En revanche, la période 1956–1973 est un artefact : l'or avait alors un prix fixé par l'État (35 $), et le ratio n'avait rien d'un signal de marché.</li>
 <li><b>Sous 0,459 g</b> : 1934–1936 (dévaluation du dollar contre l'or), 1979–1983 et août–octobre 2011. Chaque fois, c'était un bon moment pour repasser de l'or aux actions.</li>
 <li><b>Limites</b> : ces seuils sont lus sur le graphique du livre, et le texte des pages fournies ne donne pas la règle exacte. Ils ont été choisis en voyant tout l'historique, avec très peu d'épisodes (3 ou 4 par seuil en un siècle). Le ratio peut rester longtemps loin de 1 g : par exemple sous 0,66 g de 2008 à 2014.</li></ul></section>
+
+<section id="quadrants" class="card"><h2>Les quatre quadrants : inflation / déflation, boom / bust</h2>
+<div class="sub">D'après « Les cycles longs dans la gestion de portefeuille » (Institut des Libertés, février 2024). En haut : or / cash (placement à 3 mois US capitalisé), base 100, et sa moyenne mobile 7 ans. En bas : S&amp;P 500 dividendes réinvestis / or (le ratio du graphique 17) et sa moyenne 7 ans. Fond coloré : quadrant du mois. Échelles logarithmiques.</div>
+<div class="grid" id="curq" style="margin-top:10px"></div><div id="qleg" class="sub" style="margin-top:8px"></div><div id="cq" class="chart" style="height:520px"></div>
+<h3>Ce que dit Gave</h3>
+<p>Deux questions suffisent pour situer l'économie. <b>Inflation ou déflation ?</b> On regarde si l'<span class="or">or</span> fait mieux que le <b>cash</b> (bons du Trésor). <b>Boom ou bust ?</b> On regarde si les <span class="actions">actions</span> font mieux que l'or. Chaque quadrant exclut certains actifs :</p>
+<ul><li><b>Boom déflationniste</b> (croissance, pas d'inflation) : ni or ni cash.</li>
+<li><b>Bust déflationniste</b> (récession, déflation) : ni actions ni or, il faut avoir du cash. Ailleurs dans le même article, Gave cite aussi les obligations des pays sûrs dans une crise de type années 1930 : le texte n'est pas entièrement cohérent sur ce point.</li>
+<li><b>Boom inflationniste</b> : aucune obligation.</li>
+<li><b>Bust inflationniste</b> : ni obligations ni actions, seulement de l'or et du cash.</li></ul>
+<p><b class="warn">Hypothèse du site, pas de Gave :</b> Gave ne dit pas à partir de quand l'or « bat » le cash ou les actions « battent » l'or. On utilise ici la même convention que pour ses graphiques 15 et 17 : le ratio est au-dessus de sa <b>moyenne mobile 7 ans</b> (84 mois). Un autre critère (performance sur 1 an, sur 3 ans, tendance…) donnerait d'autres dates.</p>
+<h3>Comparaison avec ce qu'écrit Gave</h3>
+<p>Gave date le <b>boom déflationniste de 1982 à 2020</b> et un <b>boom inflationniste depuis 2020</b> (article de février 2024). Avec la règle de la moyenne 7 ans, les grandes phases depuis 1980 sont :</p><ul id="qhist"></ul>
+<p class="sub">On retrouve le boom déflationniste 1983–2002, puis le boom inflationniste 2020–2025. En revanche, de 2002 à 2013, l'or a nettement battu le cash et les actions : la règle mécanique classe ces années en « bust inflationniste », alors que Gave résume toute la période 1982–2020 en boom déflationniste. Depuis février 2025, le ratio actions / or est sous sa moyenne 7 ans (voir le graphique 17) : la règle affiche « bust inflationniste ». Gave, lui, n'a pas publié de changement de quadrant à notre connaissance.</p></section>
+
+<section id="wicksell" class="card"><h2>Règle de Wicksell : taux à 10 ans US contre croissance du PIB nominal</h2>
+<div class="sub">D'après « Maurice Allais, Wicksell et le cours de l'or » (Institut des Libertés, mars 2026). Taux 10 ans US (FRED GS10, mois en cours Yahoo ^TNX) et croissance annuelle moyenne du PIB nominal US sur les 7 dernières années (FRED GDP, trimestriel). Fond doré : taux sous la croissance (signal or).</div>
+<div class="grid" id="curw" style="margin-top:10px"></div><div id="cw" class="chart"></div>
+<h3>Ce que dit Gave</h3>
+<p>Reprenant Wicksell, Gave compare le <b>taux de marché</b> (le 10 ans) au <b>taux naturel</b>, mesuré par « la croissance moyenne annuelle du PIB sur les 7 dernières années ». Quand les taux longs sont <b>sous</b> la croissance, l'argent est trop bon marché : il ne faut avoir que de l'<span class="or">or</span>. Dans le cas inverse, c'est l'inverse. Selon lui, « depuis le début de 2002, il faut avoir de l'or ». Il ne vendrait son or que si le 10 ans US montait à <b>au moins 5,9 %</b> (ligne pointillée).</p>
+<h3>Divergence avec le graphique 15</h3>
+<p>Les deux règles ne racontent pas la même histoire. Le <b>graphique 15</b> (or / obligations contre sa moyenne 7 ans) est revenu aux <span class="obligations">obligations</span> de 2013 à 2019 et n'est repassé à l'or qu'en <b>2019</b>. La <b>règle de Wicksell</b> reste à l'<span class="or">or</span> presque sans interruption <b>depuis 2002</b> (seuls des mois isolés en 2002, 2007 et janvier 2014 repassent du côté obligations), car le 10 ans est resté sous la croissance nominale presque tout le temps. Wicksell dit si la monnaie est « trop bon marché » ; le graphique 15 dit lequel des deux actifs a fait le mieux sur 7 ans. Les deux s'accordent aujourd'hui sur l'or.</p>
+<h3>Limites</h3><ul><li>Le PIB est trimestriel et publié avec retard ; les mois récents reprennent le dernier trimestre connu.</li>
+<li>Pendant les chocs (2020–2021), la croissance nominale sur 7 ans est faussée par la chute puis le rebond du PIB.</li>
+<li>Le seuil de 5,9 % est un chiffre donné par Gave pour sa propre décision, pas une règle testée.</li></ul></section>
+
+<section id="frbonds" class="card"><h2>Obligations françaises : taux 10 ans, moyenne 7 ans et rendement réel</h2>
+<div class="sub">D'après « La loi de Gresham appliquée aux marchés financiers » (Institut des Libertés, mai 2023). Taux 10 ans de l'État français (OCDE via FRED <code>IRLTLT01FRM156N</code>, moyenne mensuelle) et sa moyenne mobile 7 ans.</div>
+<div class="grid" id="curf" style="margin-top:10px"></div><div id="cf" class="chart"></div>
+<div class="sub" style="margin-top:8px">Rendement réel = taux 10 ans − inflation française sur 12 mois. Inflation : IPC France de l'OCDE (FRED <code>FRACPIALLMINMEI</code>) jusqu'en mars 2025, puis IPCH France d'Eurostat (FRED <code>CP0000FRM086NEST</code>) : raccord approximatif, trait pointillé vertical.</div>
+<div id="cfr" class="chart"></div>
+<h3>Ce que dit Gave</h3>
+<ul><li><b>Taux contre moyenne 7 ans</b> : quand le taux long est <b>au-dessus</b> de sa moyenne 7 ans, on n'a <b>pas d'obligations</b>. Ce fut le cas de 1965 à 1985 ; signal d'achat en 1985 à 12,5 % ; en dessous de 1985 à 2022 ; repassé au-dessus en janvier 2022.</li>
+<li><b>Rendement réel</b> : sa moyenne sur 53 ans est d'environ <b>2 %</b>. Au-dessus de <b>5 %</b>, acheter les obligations les plus longues ; sous <b>2 %</b>, commencer à vendre ; sous <b>1 %</b>, tout vendre (garder du cash ou aller sur un autre marché obligataire). En mai 2023, il était à −2,77 %.</li></ul>
+<h3>Limites</h3><ul><li>Ici le croisement à la hausse tombe en <b>février 2022</b> (moyenne mensuelle), contre janvier 2022 chez Gave.</li>
+<li>L'inflation retenue (glissement sur 12 mois) est très volatile : le rendement réel saute d'un mois à l'autre. Gave ne précise pas son indice d'inflation.</li>
+<li>Le raccord IPC OCDE / IPCH Eurostat en 2025 mélange deux indices légèrement différents.</li></ul></section>
+
+<section id="surachat" class="card"><h2>Alerte : or « suracheté »</h2>
+<div class="sub">Variation du prix de l'once d'or sur 12 mois (prix mensuels). Ligne rouge : +65 %. Fond rouge : mois au-dessus du seuil.</div>
+<div class="grid" id="curo" style="margin-top:10px"></div><div id="co" class="chart"></div>
+<p>Dans « Maurice Allais, Wicksell et le cours de l'or », Gave note que l'or est « suracheté » quand il monte de <b>65 % ou plus en un an</b>, ce qui était le cas fin janvier 2026, et qu'il faut alors s'attendre à un <b>repli technique</b>. C'est un <b>avertissement</b>, pas un signal de vente : il garde son or tant que la règle de Wicksell le dit. Avec des moyennes mensuelles, le seuil n'a été franchi qu'en 1973–1974, 1979–1980 et janvier–février 2026.</p></section>
 
 <section id="profits" class="card"><h2>Bonus — Profits des entreprises US et emploi (glissement annuel)</h2>
 <div class="sub">Profits après impôts (FRED CP, trimestriel) en variation sur 1 an, décalés de 9 mois vers la droite, et emplois salariés non agricoles (FRED PAYEMS) en variation sur 1 an.</div>
@@ -111,5 +155,5 @@
 <li>Seules les marchandises sont comptées. Les services, où la France est plus forte (tourisme, services), sont exclus.</li></ul></section>
 
 <section id="methodo" class="card"><h2>Méthodologie &amp; limites</h2><div id="methodo-body"></div></section>
-<p class="sub">Données : Shiller (Yale), FRED (Fed de Saint-Louis), Yahoo Finance, datasets/gold-prices (GitHub), AMECO (Commission européenne), Eurostat, BRI, Banque mondiale. Projet personnel, sans lien avec Charles Gave ni l'Institut des Libertés.</p>
+<p class="sub">Données : Shiller (Yale), FRED (dont OCDE et Eurostat) (Fed de Saint-Louis), Yahoo Finance, datasets/gold-prices (GitHub), AMECO (Commission européenne), Eurostat, BRI, Banque mondiale. Projet personnel, sans lien avec Charles Gave ni l'Institut des Libertés.</p>
 </main><script src="app.js"></script></body></html>

@@ -12,3 +12,31 @@ header{padding:20px 16px 8px;max-width:1100px;margin:auto}h1{margin:0 0 4px;font
 table{border-collapse:collapse;width:100%;font-size:.88rem}td,th{border-bottom:1px solid var(--line);padding:5px 6px;text-align:left}
 details summary{cursor:pointer;color:var(--bond)}a{color:var(--bond)}nav a{margin-right:12px;font-size:.9rem}
 ul{padding-left:20px}li{margin:3px 0}
+/* Barre d'outils des graphiques : périodes, zoom, déplacement, plein écran */
+.cwrap{position:relative;margin-top:10px}
+.ctools{display:flex;flex-wrap:wrap;gap:6px 10px;justify-content:space-between;align-items:center;margin:0 0 6px}
+.ctools .per,.ctools .act{display:flex;flex-wrap:wrap;gap:4px}
+.ctools button{background:#0d1117;color:var(--txt);border:1px solid var(--line);border-radius:7px;padding:4px 9px;font:inherit;font-size:.8rem;cursor:pointer;min-height:30px;touch-action:manipulation}
+.ctools button:hover{border-color:var(--mut)}.ctools button.on{background:#1f6feb;border-color:#1f6feb;color:#fff}
+.ctools .fsb{border-color:#1f6feb}
+#cs .ctools button{padding:3px 7px;font-size:.75rem}
+/* hors mode « Déplacer », un glissement vertical du doigt fait défiler la page ; en mode Déplacer, le doigt déplace le graphique */
+.cwrap .nsewdrag{touch-action:pan-y}.cwrap.panning .nsewdrag,.cwrap.fs.panning .nsewdrag{touch-action:none}
+.cwrap.fs{position:fixed;inset:0;z-index:1000;margin:0;background:var(--card);padding:max(8px,env(safe-area-inset-top)) max(8px,env(safe-area-inset-right)) max(8px,env(safe-area-inset-bottom)) max(8px,env(safe-area-inset-left));display:flex;flex-direction:column}
+.cwrap.fs>.js-plotly-plot,.cwrap.fs>.chart,.cwrap.fs>div:last-child{flex:1 1 auto;height:auto!important;min-height:0;width:100%}
+.cwrap.fs .ctools{flex:0 0 auto}
+.cwrap:fullscreen{background:var(--card)}
+body.noscroll{overflow:hidden}
+@media(max-width:600px){.ctools button{padding:4px 7px;font-size:.76rem}}
+/* Tableau des signaux */
+.sigt{font-size:.86rem;margin-top:10px}.sigt th{color:var(--mut);font-weight:600;white-space:nowrap}
+.sigt td{vertical-align:top}.sigt tbody tr{cursor:pointer}.sigt tbody tr:hover,.sigt tbody tr:focus{background:#1c2330;outline:none}
+.sigt .sub{font-size:.76rem}.st{font-weight:600;white-space:nowrap}.st.ok{color:var(--stock)}.st.no{color:#d29922}.st.ctx{color:var(--mut)}
+.asset{font-weight:700}.asset.or{color:var(--gold)}.asset.obligations{color:var(--bond)}.asset.actions{color:var(--stock)}.asset.cash{color:#c9d1d9;border:1px dashed var(--mut);border-radius:6px;padding:0 5px}
+@media(max-width:760px){.sigt thead{display:none}.sigt,.sigt tbody,.sigt tr,.sigt td{display:block;width:100%}
+ .sigt tr{border:1px solid var(--line);border-radius:10px;margin:0 0 10px;padding:6px 10px;background:#0d1117}
+ .sigt td{border:0;padding:3px 0;display:grid;grid-template-columns:42% 58%;gap:6px}.sigt td:first-child{display:block;padding-bottom:5px;border-bottom:1px solid var(--line);margin-bottom:3px}
+ .sigt td:not(:first-child)::before{content:attr(data-l);color:var(--mut);font-size:.78rem}
+ .sigt td>*{min-width:0}}
+
+.qchip{display:inline-block;padding:1px 8px;border-radius:10px;margin:2px 4px 2px 0;color:#e6edf3;font-size:.8rem}

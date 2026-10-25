@@ -16,19 +16,26 @@ UA = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) gave-dashboard/1.0"}
 MA_MONTHS = 84  # 7 ans
 STATUS = {}
 
-def fetch(name, url, binary=False, tries=4):
-    path = CACHE / name
+HOST_DOWN = set()  # hôtes qui ont déjà expiré pendant ce run : on passe directement au cache (fail-fast)
+
+def fetch(name, url, binary=False, tries=2, timeout=(8, 30)):
+    from urllib.parse import urlparse
+    path = CACHE / name; host = urlparse(url).netloc
     err = None
-    for i in range(tries):
+    for i in range(0 if host in HOST_DOWN else tries):
         try:
-            r = requests.get(url, headers=UA, timeout=60)
+            r = requests.get(url, headers=UA, timeout=timeout)
             r.raise_for_status()
             if len(r.content) < 200: raise ValueError("réponse trop courte")
             path.write_bytes(r.content)
             STATUS[name] = {"url": url, "ok": True, "cache": False}
             return path
         except Exception as e:
-            err = e; time.sleep(2 * (i + 1))
+            err = e
+            if isinstance(e, (requests.exceptions.Timeout, requests.exceptions.ConnectionError)):
+                HOST_DOWN.add(host); break
+            time.sleep(1 + i)
+    if err is None: err = f"{host} injoignable plus tôt dans ce run, cache utilisé"
     if path.exists():
         STATUS[name] = {"url": url, "ok": False, "cache": True, "error": str(err)}
         print(f"[WARN] {name}: échec ({err}), utilisation du cache")
@@ -267,6 +274,114 @@ def build_exports(now):
                       "fra_2002": f["base100"][f["years"].index(2002)], "usa_2002": u["base100"][u["years"].index(2002)]}
     return out
 
+# ---------------------------------------------------------------- articles de Charles Gave (Institut des Libertés)
+def periods(flag, labels):
+    """Découpe une série de codes mensuels en périodes continues [début, fin, code]."""
+    out = []
+    for d, v in flag.items():
+        if out and out[-1][2] == v: out[-1][1] = str(d)
+        else: out.append([str(d), str(d), v])
+    return [{"start": a, "end": b, "code": c, "label": labels.get(c, c)} for a, b, c in out]
+
+def monthly_fred(series):
+    s = fred(series); s.index = s.index.to_period("M"); return s[~s.index.duplicated(keep="last")].sort_index()
+
+def rnd(s, d=3): return [None if pd.isna(x) else round(float(x), d) for x in s.values]
+
+QUAD = {"boom_defl": "Boom déflationniste", "bust_defl": "Bust déflationniste",
+        "boom_infl": "Boom inflationniste", "bust_infl": "Bust inflationniste"}
+QUAD_EXCL = {"boom_defl": ["or", "cash"], "bust_defl": ["actions", "or"],
+             "boom_infl": ["obligations"], "bust_infl": ["obligations", "actions"]}
+ASSETS = ["actions", "obligations", "or", "cash"]
+
+def build_quadrants(now, gold, r17):
+    """Les cycles longs (IDL, 19/02/2024) : inflation = l'or bat le cash ; croissance = les actions battent l'or.
+    Hypothèse du site : « battre » = ratio au-dessus de sa moyenne mobile 7 ans (Gave ne précise pas le critère)."""
+    tb = monthly_fred("TB3MS")
+    last = gold.index[-1]
+    full = pd.period_range(tb.index[0], last, freq="M")
+    tbf = tb.reindex(full).ffill()  # derniers mois : dernier taux connu prolongé
+    cash = (1 + tbf.shift(1).fillna(tbf.iloc[0]) / 1200).cumprod()
+    idx = cash.index.intersection(gold.index).intersection(r17.index)
+    rc = gold[idx] / cash[idx]; rc = 100 * rc / rc.iloc[0]
+    ma = rc.rolling(MA_MONTHS).mean(); ma17 = r17.rolling(MA_MONTHS).mean().reindex(idx)
+    ok = ma.notna() & ma17.notna()
+    infl = (rc > ma)[ok]; growth = (r17.reindex(idx) > ma17)[ok]
+    code = pd.Series(np.where(infl, np.where(growth, "boom_infl", "bust_infl"), np.where(growth, "boom_defl", "bust_defl")), index=infl.index)
+    per = periods(code, QUAD)
+    c = code.iloc[-1]; excl = QUAD_EXCL[c]
+    return {"last_updated": now, "dates": [str(d) for d in idx], "ratio": rnd(rc, 4), "ma": rnd(ma, 4),
+            "periods": per, "cash_last_rate_date": str(tb.index[-1]),
+            "current": {"date": str(idx[-1]), "code": c, "label": QUAD[c], "since": per[-1]["start"],
+                        "excluded": excl, "allowed": [a for a in ASSETS if a not in excl],
+                        "inflation": bool(infl.iloc[-1]), "croissance": bool(growth.iloc[-1]),
+                        "gold_cash": float(rc.iloc[-1]), "gold_cash_ma": float(ma.iloc[-1]),
+                        "gold_cash_gap": float(rc.iloc[-1] / ma.iloc[-1] - 1),
+                        "r17": float(r17.iloc[-1]), "r17_ma": float(ma17.iloc[-1]), "r17_gap": float(r17.iloc[-1] / ma17.iloc[-1] - 1),
+                        "tb3": float(tb.iloc[-1])}}
+
+def build_wicksell(now, yld):
+    """Règle de Wicksell (IDL, 23/03/2026) : taux 10 ans US < croissance annuelle moyenne du PIB nominal sur 7 ans → or."""
+    gdp = fred("GDP"); gdp.index = gdp.index.to_period("Q")
+    g7 = ((gdp / gdp.shift(28)) ** (1 / 7) - 1) * 100
+    g7 = g7.dropna()
+    gm = pd.Series({p: v for q, v in g7.items() for p in pd.period_range(q.asfreq("M", "s"), q.asfreq("M", "e"), freq="M")})
+    y = yld[yld.index >= gm.index[0]]
+    gm = gm.reindex(y.index).ffill()  # derniers mois : dernière croissance publiée
+    ok = gm.notna(); y, gm = y[ok], gm[ok]
+    below = y < gm
+    code = pd.Series(np.where(below, "or", "obligations"), index=y.index)
+    per = periods(code, {"or": "or", "obligations": "obligations"})
+    return {"last_updated": now, "dates": [str(d) for d in y.index], "taux": rnd(y, 3), "croissance": rnd(gm, 3),
+            "periods": per, "gave_threshold": 5.9, "gdp_last": str(gdp.index[-1]),
+            "current": {"date": str(y.index[-1]), "taux": float(y.iloc[-1]), "croissance": float(gm.iloc[-1]),
+                        "ecart": float(y.iloc[-1] - gm.iloc[-1]), "signal": code.iloc[-1], "since": per[-1]["start"],
+                        "gdp_quarter": str(gdp.index[-1])}}
+
+def build_fr_bonds(now):
+    """La loi de Gresham (IDL, 29/05/2023) : taux 10 ans français vs sa moyenne 7 ans, et rendement réel (10 ans − inflation)."""
+    fr = monthly_fred("IRLTLT01FRM156N")
+    ma = fr.rolling(MA_MONTHS).mean()
+    above, ev = crossings(fr, ma, "au-dessus", "en dessous")
+    cpi = monthly_fred("FRACPIALLMINMEI").pct_change(12) * 100  # IPC OCDE France (s'arrête en 2025)
+    src = "IPC France (OCDE)"
+    try:
+        h = monthly_fred("CP0000FRM086NEST").pct_change(12) * 100  # IPCH France (Eurostat), pour prolonger
+        cpi = pd.concat([cpi.dropna(), h[h.index > cpi.dropna().index[-1]].dropna()])
+
+    except Exception as e: print("[WARN] IPCH France", e); h = None
+    cpi = cpi.dropna(); cpi_split = None
+    if h is not None:
+        o = monthly_fred("FRACPIALLMINMEI").pct_change(12).dropna()
+        cpi_split = str(o.index[-1])
+    idx = fr.index.intersection(cpi.index); idx = idx[idx >= pd.Period("1970-01", "M")]
+    real = fr[idx] - cpi[idx]
+    r = float(real.iloc[-1])
+    if r >= 5: st = "acheter"
+    elif r >= 2: st = "neutre"
+    elif r >= 1: st = "commencer_vendre"
+    else: st = "tout_vendre"
+    return {"last_updated": now, "dates": [str(d) for d in fr.index], "taux": rnd(fr, 3), "ma": rnd(ma, 3), "events": ev,
+            "real": {"dates": [str(d) for d in idx], "v": rnd(real, 3), "infl": rnd(cpi[idx], 3)},
+            "cpi_split": cpi_split, "levels": {"acheter": 5, "commencer_vendre": 2, "tout_vendre": 1, "moyenne_gave": 2},
+            "current": {"date": str(fr.index[-1]), "taux": float(fr.iloc[-1]), "ma": float(ma.iloc[-1]),
+                        "above": bool(above.iloc[-1]), "since": ev[-1]["date"] if ev else None,
+                        "gap_pct": float(fr.iloc[-1] / ma.iloc[-1] - 1),
+                        "real_date": str(idx[-1]), "real": r, "infl": float(cpi[idx[-1]]), "taux_real_date": float(fr[idx[-1]]),
+                        "real_status": st, "real_mean": float(real.mean()), "real_mean_from": str(idx[0])}}
+
+def build_gold_overbought(now, gold, thr=0.65):
+    """Or « suracheté » (IDL, 23/03/2026) : hausse de 65 % ou plus sur 12 mois."""
+    yoy = gold.pct_change(12).dropna(); yoy = yoy[yoy.index >= pd.Period("1971-01", "M")]
+    flag = yoy >= thr
+    per = [p for p in periods(pd.Series(np.where(flag, "sur", "non"), index=yoy.index), {}) if p["code"] == "sur"]
+    k = yoy.index[-1]
+    return {"last_updated": now, "dates": [str(d) for d in yoy.index], "v": rnd(yoy * 100, 2), "threshold": thr * 100,
+            "periods": per,
+            "current": {"date": str(k), "yoy": float(yoy.iloc[-1]), "alert": bool(flag.iloc[-1]),
+                        "gold": float(gold[k]), "gold_12m": float(gold[k - 12]),
+                        "max_12m": float(yoy[yoy.index > k - 12].max()), "max_12m_date": str(yoy[yoy.index > k - 12].idxmax())}}
+
 
 def build_macro(now, sh=None, gold=None):
     res = {}
@@ -382,7 +497,20 @@ def main():
                                   "above": bool(above.iloc[-1]), "since": ev[-1]["date"] if ev else None}}
     except Exception as e: print("[WARN] cac", e)
 
+    # Articles de l'Institut des Libertés : quadrants, Wicksell, obligations françaises, or suracheté
+    for key, fn in (("quadrants", lambda: build_quadrants(now, gold, r17)), ("wicksell", lambda: build_wicksell(now, yld)),
+                    ("frbonds", lambda: build_fr_bonds(now)), ("surachat", lambda: build_gold_overbought(now, gold))):
+        try: out[key] = fn()
+        except Exception as e: print(f"[WARN] {key}", e)
+
     out.update(build_macro(now, sh, gold))
+    # Repli : un bloc qui n'a pas pu être recalculé garde sa dernière version publiée (data/<clé>.json)
+    for k in ("g23", "profits", "cac", "dette", "depenses", "change", "rente", "export", "quadrants", "wicksell", "frbonds", "surachat"):
+        if k not in out and (DATA / f"{k}.json").exists():
+            try:
+                out[k] = json.loads((DATA / f"{k}.json").read_text()); out[k]["stale"] = True
+                print(f"[WARN] {k}: données précédentes conservées")
+            except Exception as e: print(f"[WARN] {k} repli", e)
     out["sources"] = STATUS
     for k, v in out.items():
         if isinstance(v, dict): (DATA / f"{k}.json").write_text(json.dumps(v, ensure_ascii=False))
